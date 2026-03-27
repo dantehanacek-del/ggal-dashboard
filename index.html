@@ -786,7 +786,7 @@ function _checkDolarVariation(name, newVal, prevVal, cooldownKey) {
 
 async function fetchDolar() {
   try {
-    const res  = await fetch('https://dolarapi.com/v1/dolares');
+    const res  = await fetchT('https://dolarapi.com/v1/dolares', 8000);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     const mep  = data.find(d => d.casa === 'bolsa');
@@ -818,12 +818,9 @@ async function fetchDolar() {
 }
 
 // ══════════════════════════════════════════════
-//  YAHOO FINANCE
+//  MARKET DATA via Stooq
 // ══════════════════════════════════════════════
-// ══════════════════════════════════════════════
-//  MARKET DATA via Stooq (sin API key, CORS-friendly)
-// ══════════════════════════════════════════════
-// Yahoo symbol → Stooq symbol
+// Yahoo-style symbol → Stooq symbol
 const STOOQ_SYMS = {
   'GGAL':    'ggal.us',
   'GGAL.BA': 'ggal.ba',
@@ -836,54 +833,54 @@ const STOOQ_SYMS = {
   'SUPV.BA': 'supv.ba',
 };
 const STOOQ_BASE = 'https://stooq.com/q/l/?f=sd2t2ohlcv&h&e=csv&s=';
-const STOOQ_CORS = 'https://corsproxy.io/?';
+
+// fetch con timeout (evita que proxies colgados bloqueen todo)
+async function fetchT(url, ms = 6000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { cache: 'no-store', signal: ctrl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+function parseStooqCsv(text) {
+  if (!text || text.length < 10) return null;
+  const lines = text.trim().replace(/\r/g, '').split('\n');
+  if (lines.length < 2) return null;
+  const headers = lines[0].split(',').map(h => h.trim());
+  const vals    = lines[1].split(',').map(v => v.trim());
+  const row = {};
+  headers.forEach((h, i) => row[h] = vals[i]);
+  const close = parseFloat(row['Close']);
+  const open  = parseFloat(row['Open']);
+  if (isNaN(close) || close <= 0) return null;
+  const chg = isNaN(open) ? 0 : close - open;
+  const pct = (!open || isNaN(open)) ? 0 : (chg / open) * 100;
+  return { price: close, change: chg, pct, volume: parseInt(row['Volume'] || '0'), open };
+}
 
 async function fetchStooqSymbol(stooqSym) {
   const rawUrl = STOOQ_BASE + stooqSym;
+  const enc    = encodeURIComponent(rawUrl);
 
-  const attempts = [
-    // 1. corsproxy.io → Stooq (proxy accede sin problemas a Stooq)
-    async () => {
-      const r = await fetch('https://corsproxy.io/?' + encodeURIComponent(rawUrl), { cache: 'no-store' });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return await r.text();
-    },
-    // 2. allorigins /get → devuelve JSON con .contents
-    async () => {
-      const r = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent(rawUrl), { cache: 'no-store' });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      const j = await r.json();
-      return j.contents || '';
-    },
-    // 3. directo (funciona si Stooq algún día agrega CORS)
-    async () => {
-      const r = await fetch(rawUrl, { cache: 'no-store' });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return await r.text();
-    },
+  // Intentar proxies en paralelo — tomar el primero que responda con datos válidos
+  const proxies = [
+    () => fetchT('https://corsproxy.io/?' + enc).then(r => { if (!r.ok) throw new Error(r.status); return r.text(); }),
+    () => fetchT('https://api.allorigins.win/get?url=' + enc).then(r => { if (!r.ok) throw new Error(r.status); return r.json().then(j => j.contents || ''); }),
+    () => fetchT(rawUrl).then(r => { if (!r.ok) throw new Error(r.status); return r.text(); }),
   ];
 
-  for (const attempt of attempts) {
+  for (const p of proxies) {
     try {
-      const text = await attempt();
-      if (!text || text.trim().length < 5) continue;
-      const lines = text.trim().replace(/\r/g, '').split('\n');
-      if (lines.length < 2) continue;
-      const headers = lines[0].split(',').map(h => h.trim());
-      const vals    = lines[1].split(',').map(v => v.trim());
-      const row = {};
-      headers.forEach((h, i) => row[h] = vals[i]);
-      const close = parseFloat(row['Close']);
-      const open  = parseFloat(row['Open']);
-      if (isNaN(close) || close <= 0) continue;
-      const chg = isNaN(open) ? 0 : close - open;
-      const pct = (!open || isNaN(open)) ? 0 : (chg / open) * 100;
-      return { price: close, change: chg, pct, volume: parseInt(row['Volume'] || '0'), open };
+      const text   = await p();
+      const parsed = parseStooqCsv(text);
+      if (parsed) return parsed;
     } catch (e) {
-      console.warn('[Stooq]', stooqSym, e.message);
+      console.warn('[Stooq]', stooqSym, e.message || e);
     }
   }
-  console.warn('[Stooq] sin datos para', stooqSym);
   return null;
 }
 
