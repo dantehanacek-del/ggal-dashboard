@@ -832,16 +832,12 @@ async function fetchT(url, ms = 6000) {
   }
 }
 
-// ── Fuente 1: Yahoo Finance (batch, cambio vs cierre anterior correcto) ──
-const YF_SYMS = 'GGAL,GGAL.BA,SPY,%5EIXIC,%5EDJI,%5EMERV,BMA.BA,BBAR.BA,SUPV.BA';
+// ── Fuente 1: data.json generado por GitHub Actions (Yahoo Finance server-side) ──
+const YF_SYMS = 'GGAL,GGAL.BA,%5EGSPC,%5EIXIC,%5EDJI,%5EMERV,BMA.BA,BBAR.BA,SUPV.BA';
 const YF_URL  = 'https://query1.finance.yahoo.com/v8/finance/quote?symbols=' + YF_SYMS;
 
-async function fetchYahooQuotes() {
-  const r = await fetchT('https://corsproxy.io/?' + encodeURIComponent(YF_URL), 8000);
-  if (!r.ok) throw new Error('HTTP ' + r.status);
-  const json = await r.json();
-  const qs   = json?.quoteResponse?.result;
-  if (!qs?.length) throw new Error('respuesta vacía');
+function parseYFResult(qs) {
+  if (!qs?.length) throw new Error('vacío');
   const map = {};
   for (const q of qs) {
     map[q.symbol] = {
@@ -855,11 +851,28 @@ async function fetchYahooQuotes() {
   return map;
 }
 
-// ── Fuente 2: Stooq (fallback con campo Change vs cierre anterior) ──
+async function fetchFromDataJson() {
+  // data.json es generado por GitHub Actions cada 5 min — mismo dominio, sin CORS
+  const r = await fetchT('./data.json?v=' + Date.now(), 5000);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const json = await r.json();
+  if (json?.quoteResponse?.error) throw new Error(json.quoteResponse.error);
+  return parseYFResult(json?.quoteResponse?.result);
+}
+
+async function fetchYahooQuotes() {
+  // Fallback: corsproxy.io → Yahoo Finance directo
+  const r = await fetchT('https://corsproxy.io/?' + encodeURIComponent(YF_URL), 8000);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const json = await r.json();
+  return parseYFResult(json?.quoteResponse?.result);
+}
+
+// ── Fuente 3: Stooq (fallback con campo Change vs cierre anterior) ──
 const STOOQ_SYMS = {
   'GGAL':    'ggal.us',
   'GGAL.BA': 'ggal.ba',
-  'SPY':     'spy.us',
+  '^GSPC':   '^spx',
   '^IXIC':   '^ndq',
   '^DJI':    '^dji',
   '^MERV':   '^merv',
@@ -910,8 +923,8 @@ function renderQuotes(map) {
     if (!d) return;
     const { price, change: chg, pct, volume: vol, open } = d;
     switch (sym) {
-      case 'SPY':
-        document.getElementById('spy-price').textContent  = '$' + fmt(price);
+      case '^GSPC':
+        document.getElementById('spy-price').textContent  = fmt(price, 0);
         document.getElementById('spy-change').innerHTML   = fmtChange(chg, pct);  break;
       case '^IXIC':
         document.getElementById('nasdaq-price').textContent = fmt(price, 0);
@@ -955,16 +968,25 @@ function renderQuotes(map) {
 }
 
 async function fetchYahoo() {
-  // 1. Yahoo Finance primero (batch, datos correctos)
+  // 1. data.json del repo (GitHub Actions → Yahoo Finance server-side, sin CORS)
   try {
-    const map = await fetchYahooQuotes();
-    console.log('[Yahoo Finance] ✓');
+    const map = await fetchFromDataJson();
+    console.log('[data.json] ✓');
     renderQuotes(map);
     return;
   } catch (e) {
-    console.warn('[Yahoo Finance] ✗:', e.message, '— usando Stooq');
+    console.warn('[data.json] ✗:', e.message);
   }
-  // 2. Fallback Stooq
+  // 2. Yahoo Finance via corsproxy.io (fallback directo)
+  try {
+    const map = await fetchYahooQuotes();
+    console.log('[Yahoo Finance proxy] ✓');
+    renderQuotes(map);
+    return;
+  } catch (e) {
+    console.warn('[Yahoo Finance proxy] ✗:', e.message, '— usando Stooq');
+  }
+  // 3. Fallback Stooq
   const entries = await Promise.allSettled(
     Object.entries(STOOQ_SYMS).map(([ySym, sSym]) =>
       fetchStooqSymbol(sSym).then(d => [ySym, d])
