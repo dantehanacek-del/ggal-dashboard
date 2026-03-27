@@ -823,6 +823,8 @@ const SYMBOLS = ['GGAL', 'GGAL.BA', 'SPY', '%5EIXIC', '%5EDJI', '%5EMERV', 'BMA.
 const YF_BASE  = 'https://query1.finance.yahoo.com/v8/finance/quote?symbols=';
 const PROXIES  = [
   u => 'https://corsproxy.io/?' + encodeURIComponent(u),
+  u => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u),
+  u => 'https://thingproxy.freeboard.io/fetch/' + u,
   u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
 ];
 
@@ -1037,10 +1039,8 @@ function connectMatriz(url) {
   matrizWs.onmessage = (ev) => {
     try {
       const msg = JSON.parse(ev.data);
-      // DEBUG TEMPORAL — ver en F12 > Console
-      if (msg.t && (msg.t.startsWith('book') || msg.t.startsWith('md') || msg.t.startsWith('trade'))) {
-        console.log('[MATRIZ DEBUG]', msg.t, JSON.stringify(msg.d));
-      }
+      // DEBUG TEMPORAL — logear TODOS los mensajes
+      console.log('[MATRIZ ALL]', ev.data.substring(0, 300));
       handleMatrizMsg(msg);
     } catch (e) { /* ignorar mensajes no-JSON */ }
   };
