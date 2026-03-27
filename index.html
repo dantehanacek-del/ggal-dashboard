@@ -820,25 +820,29 @@ async function fetchDolar() {
 //  YAHOO FINANCE
 // ══════════════════════════════════════════════
 const SYMBOLS = ['GGAL', 'GGAL.BA', 'SPY', '%5EIXIC', '%5EDJI', '%5EMERV', 'BMA.BA', 'BBAR.BA', 'SUPV.BA'];
-const YF_BASE = 'https://query1.finance.yahoo.com/v8/finance/quote?symbols=';
-const PROXY   = 'https://api.allorigins.win/raw?url=';
+const YF_BASE  = 'https://query1.finance.yahoo.com/v8/finance/quote?symbols=';
+const PROXIES  = [
+  u => 'https://corsproxy.io/?' + encodeURIComponent(u),
+  u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
+];
 
 async function fetchYahoo() {
   const url = YF_BASE + SYMBOLS.join(',');
   let data;
-  try {
-    const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
-    if (!r.ok) throw new Error('direct failed');
-    data = await r.json();
-  } catch {
+  // Intentar directo primero, luego cada proxy
+  const attempts = [
+    () => fetch(url, { headers: { 'Accept': 'application/json' } }),
+    ...PROXIES.map(p => () => fetch(p(url))),
+  ];
+  for (const attempt of attempts) {
     try {
-      const r = await fetch(PROXY + encodeURIComponent(url));
-      data = await r.json();
-    } catch (e) {
-      console.warn('Yahoo Finance error:', e);
-      return;
-    }
+      const r = await attempt();
+      if (!r.ok) continue;
+      const json = await r.json();
+      if (json?.quoteResponse?.result) { data = json; break; }
+    } catch { /* probar siguiente */ }
   }
+  if (!data) { console.warn('Yahoo Finance: todos los proxies fallaron'); return; }
 
   const quotes = data?.quoteResponse?.result;
   if (!quotes) return;
