@@ -116,7 +116,7 @@
     /* ── SECTOR BANCARIO ── */
     .banking-grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 0;
       margin-top: 5px;
       padding-top: 5px;
@@ -501,6 +501,11 @@
         </div>
       </div>
       <div class="banking-grid">
+        <div class="bank-item" style="border-right:1px solid var(--blue);opacity:0.9">
+          <div class="bank-name" style="color:var(--blue)">GGAL</div>
+          <div class="bank-price" id="ggal-bank-price">--</div>
+          <div class="bank-change" id="ggal-bank-change">--</div>
+        </div>
         <div class="bank-item">
           <div class="bank-name">BMA</div>
           <div class="bank-price" id="bma-price">--</div>
@@ -836,8 +841,10 @@ async function fetchYahoo() {
 
       case 'GGAL.BA':
         _ggalSpot = price;
-        document.getElementById('ggal-spot-price').textContent = '$' + fmt(price);
-        document.getElementById('ggal-spot-change').innerHTML  = fmtChange(chg, pct);
+        document.getElementById('ggal-spot-price').textContent  = '$' + fmt(price);
+        document.getElementById('ggal-spot-change').innerHTML   = fmtChange(chg, pct);
+        document.getElementById('ggal-bank-price').textContent  = '$' + fmt(price, 0);
+        document.getElementById('ggal-bank-change').innerHTML   = fmtChange(chg, pct);
         document.getElementById('ggal-spot-vol').textContent   = fmtK(vol);
         document.getElementById('ggal-spot-open').textContent  = '$' + fmt(open);
         renderBook('ggal-spot-book', bid, ask, bidSize, askSize, '$', 'spot-hint');
