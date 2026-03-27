@@ -818,9 +818,44 @@ async function fetchDolar() {
 }
 
 // ══════════════════════════════════════════════
-//  MARKET DATA via Stooq
+//  MARKET DATA (Yahoo Finance → Stooq fallback)
 // ══════════════════════════════════════════════
-// Yahoo-style symbol → Stooq symbol
+
+// fetch con timeout — evita proxies colgados
+async function fetchT(url, ms = 6000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { cache: 'no-store', signal: ctrl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// ── Fuente 1: Yahoo Finance (batch, cambio vs cierre anterior correcto) ──
+const YF_SYMS = 'GGAL,GGAL.BA,SPY,%5EIXIC,%5EDJI,%5EMERV,BMA.BA,BBAR.BA,SUPV.BA';
+const YF_URL  = 'https://query1.finance.yahoo.com/v8/finance/quote?symbols=' + YF_SYMS;
+
+async function fetchYahooQuotes() {
+  const r = await fetchT('https://corsproxy.io/?' + encodeURIComponent(YF_URL), 8000);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const json = await r.json();
+  const qs   = json?.quoteResponse?.result;
+  if (!qs?.length) throw new Error('respuesta vacía');
+  const map = {};
+  for (const q of qs) {
+    map[q.symbol] = {
+      price:  q.regularMarketPrice,
+      change: q.regularMarketChange,
+      pct:    q.regularMarketChangePercent,
+      volume: q.regularMarketVolume,
+      open:   q.regularMarketOpen,
+    };
+  }
+  return map;
+}
+
+// ── Fuente 2: Stooq (fallback con campo Change vs cierre anterior) ──
 const STOOQ_SYMS = {
   'GGAL':    'ggal.us',
   'GGAL.BA': 'ggal.ba',
@@ -832,18 +867,7 @@ const STOOQ_SYMS = {
   'BBAR.BA': 'bbar.ba',
   'SUPV.BA': 'supv.ba',
 };
-const STOOQ_BASE = 'https://stooq.com/q/l/?f=sd2t2ohlcv&h&e=csv&s=';
-
-// fetch con timeout (evita que proxies colgados bloqueen todo)
-async function fetchT(url, ms = 6000) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), ms);
-  try {
-    return await fetch(url, { cache: 'no-store', signal: ctrl.signal });
-  } finally {
-    clearTimeout(t);
-  }
-}
+const STOOQ_BASE = 'https://stooq.com/q/l/?f=sd2t2ohlcvde&h&e=csv&s=';
 
 function parseStooqCsv(text) {
   if (!text || text.length < 10) return null;
@@ -855,77 +879,58 @@ function parseStooqCsv(text) {
   headers.forEach((h, i) => row[h] = vals[i]);
   const close = parseFloat(row['Close']);
   const open  = parseFloat(row['Open']);
+  const chgF  = parseFloat(row['Change']);
+  const pctF  = parseFloat(row['Change%']);
   if (isNaN(close) || close <= 0) return null;
-  const chg = isNaN(open) ? 0 : close - open;
-  const pct = (!open || isNaN(open)) ? 0 : (chg / open) * 100;
-  return { price: close, change: chg, pct, volume: parseInt(row['Volume'] || '0'), open };
+  const change = !isNaN(chgF) ? chgF : (isNaN(open) ? 0 : close - open);
+  const pct    = !isNaN(pctF) ? pctF : ((!open || isNaN(open)) ? 0 : (change / open) * 100);
+  return { price: close, change, pct, volume: parseInt(row['Volume'] || '0'), open };
 }
 
 async function fetchStooqSymbol(stooqSym) {
   const rawUrl = STOOQ_BASE + stooqSym;
   const enc    = encodeURIComponent(rawUrl);
-
-  // Intentar proxies en paralelo — tomar el primero que responda con datos válidos
   const proxies = [
     () => fetchT('https://corsproxy.io/?' + enc).then(r => { if (!r.ok) throw new Error(r.status); return r.text(); }),
     () => fetchT('https://api.allorigins.win/get?url=' + enc).then(r => { if (!r.ok) throw new Error(r.status); return r.json().then(j => j.contents || ''); }),
     () => fetchT(rawUrl).then(r => { if (!r.ok) throw new Error(r.status); return r.text(); }),
   ];
-
   for (const p of proxies) {
     try {
-      const text   = await p();
-      const parsed = parseStooqCsv(text);
+      const parsed = parseStooqCsv(await p());
       if (parsed) return parsed;
-    } catch (e) {
-      console.warn('[Stooq]', stooqSym, e.message || e);
-    }
+    } catch (e) { console.warn('[Stooq]', stooqSym, e.message || e); }
   }
   return null;
 }
 
-async function fetchYahoo() {
-  const fetches = Object.entries(STOOQ_SYMS).map(([ySym, sSym]) =>
-    fetchStooqSymbol(sSym).then(d => ({ sym: ySym, data: d }))
-  );
-  const results = await Promise.allSettled(fetches);
-
-  let anyData = false;
-  for (const r of results) {
-    if (r.status !== 'fulfilled' || !r.value?.data) continue;
-    const { sym, data } = r.value;
-    const { price, change: chg, pct, volume: vol, open } = data;
-    anyData = true;
-
+function renderQuotes(map) {
+  const upd = (sym) => {
+    const d = map[sym];
+    if (!d) return;
+    const { price, change: chg, pct, volume: vol, open } = d;
     switch (sym) {
       case 'SPY':
         document.getElementById('spy-price').textContent  = '$' + fmt(price);
-        document.getElementById('spy-change').innerHTML   = fmtChange(chg, pct);
-        break;
+        document.getElementById('spy-change').innerHTML   = fmtChange(chg, pct);  break;
       case '^IXIC':
         document.getElementById('nasdaq-price').textContent = fmt(price, 0);
-        document.getElementById('nasdaq-change').innerHTML  = fmtChange(chg, pct);
-        break;
+        document.getElementById('nasdaq-change').innerHTML  = fmtChange(chg, pct); break;
       case '^DJI':
         document.getElementById('dow-price').textContent  = fmt(price, 0);
-        document.getElementById('dow-change').innerHTML   = fmtChange(chg, pct);
-        break;
+        document.getElementById('dow-change').innerHTML   = fmtChange(chg, pct);  break;
       case '^MERV':
         document.getElementById('merval-price').textContent = fmt(price, 0);
-        document.getElementById('merval-change').innerHTML  = fmtChange(chg, pct);
-        break;
+        document.getElementById('merval-change').innerHTML  = fmtChange(chg, pct); break;
       case 'BMA.BA':
         document.getElementById('bma-price').textContent  = '$' + fmt(price, 0);
-        document.getElementById('bma-change').innerHTML   = fmtChange(chg, pct);
-        break;
+        document.getElementById('bma-change').innerHTML   = fmtChange(chg, pct);  break;
       case 'BBAR.BA':
         document.getElementById('bbar-price').textContent = '$' + fmt(price, 0);
-        document.getElementById('bbar-change').innerHTML  = fmtChange(chg, pct);
-        break;
+        document.getElementById('bbar-change').innerHTML  = fmtChange(chg, pct);  break;
       case 'SUPV.BA':
         document.getElementById('supv-price').textContent = '$' + fmt(price, 0);
-        document.getElementById('supv-change').innerHTML  = fmtChange(chg, pct);
-        break;
+        document.getElementById('supv-change').innerHTML  = fmtChange(chg, pct);  break;
       case 'GGAL.BA':
         _ggalSpot = price;
         document.getElementById('ggal-spot-price').textContent = '$' + fmt(price);
@@ -933,25 +938,47 @@ async function fetchYahoo() {
         document.getElementById('ggal-bank-price').textContent = '$' + fmt(price, 0);
         document.getElementById('ggal-bank-change').innerHTML  = fmtChange(chg, pct);
         document.getElementById('ggal-spot-vol').textContent  = fmtK(vol);
-        document.getElementById('ggal-spot-open').textContent = '$' + fmt(open);
-        break;
+        document.getElementById('ggal-spot-open').textContent = '$' + fmt(open);  break;
       case 'GGAL':
         _ggalAdr = price;
         document.getElementById('ggal-adr-price').textContent = 'USD ' + fmt(price, 2);
         document.getElementById('ggal-adr-change').innerHTML  = fmtChange(chg, pct);
         document.getElementById('ggal-adr-vol').textContent   = fmtK(vol);
-        document.getElementById('ggal-adr-open').textContent  = 'USD ' + fmt(open, 2);
-        break;
+        document.getElementById('ggal-adr-open').textContent  = 'USD ' + fmt(open, 2); break;
     }
-  }
+  };
+  Object.keys(map).forEach(upd);
+  updateRatio();
+  checkAlerts();
+  document.getElementById('last-update').textContent =
+    'Última actualización: ' + new Date().toLocaleTimeString('es-AR', { hour12: false });
+}
 
-  if (anyData) {
-    updateRatio();
-    checkAlerts();
-    document.getElementById('last-update').textContent =
-      'Última actualización: ' + new Date().toLocaleTimeString('es-AR', { hour12: false });
+async function fetchYahoo() {
+  // 1. Yahoo Finance primero (batch, datos correctos)
+  try {
+    const map = await fetchYahooQuotes();
+    console.log('[Yahoo Finance] ✓');
+    renderQuotes(map);
+    return;
+  } catch (e) {
+    console.warn('[Yahoo Finance] ✗:', e.message, '— usando Stooq');
+  }
+  // 2. Fallback Stooq
+  const entries = await Promise.allSettled(
+    Object.entries(STOOQ_SYMS).map(([ySym, sSym]) =>
+      fetchStooqSymbol(sSym).then(d => [ySym, d])
+    )
+  );
+  const map = {};
+  for (const r of entries) {
+    if (r.status === 'fulfilled' && r.value?.[1]) map[r.value[0]] = r.value[1];
+  }
+  if (Object.keys(map).length) {
+    console.log('[Stooq] ✓', Object.keys(map).length, 'símbolos');
+    renderQuotes(map);
   } else {
-    console.warn('Stooq: sin datos');
+    console.warn('Sin datos de mercado');
   }
 }
 
