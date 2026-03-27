@@ -1033,6 +1033,10 @@ function connectMatriz(url) {
   matrizWs.onmessage = (ev) => {
     try {
       const msg = JSON.parse(ev.data);
+      // DEBUG TEMPORAL — ver en F12 > Console
+      if (msg.t && (msg.t.startsWith('book') || msg.t.startsWith('md') || msg.t.startsWith('trade'))) {
+        console.log('[MATRIZ DEBUG]', msg.t, JSON.stringify(msg.d));
+      }
       handleMatrizMsg(msg);
     } catch (e) { /* ignorar mensajes no-JSON */ }
   };
