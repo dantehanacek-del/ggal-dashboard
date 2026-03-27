@@ -819,48 +819,62 @@ async function fetchDolar() {
 // ══════════════════════════════════════════════
 //  YAHOO FINANCE
 // ══════════════════════════════════════════════
-const SYMBOLS = ['GGAL', 'GGAL.BA', 'SPY', '%5EIXIC', '%5EDJI', '%5EMERV', 'BMA.BA', 'BBAR.BA', 'SUPV.BA'];
-const YF_BASE  = 'https://query1.finance.yahoo.com/v8/finance/quote?symbols=';
-const PROXIES  = [
-  u => 'https://corsproxy.io/?' + encodeURIComponent(u),
-  u => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u),
-  u => 'https://thingproxy.freeboard.io/fetch/' + u,
-  u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
-];
+// ══════════════════════════════════════════════
+//  MARKET DATA via Stooq (sin API key, CORS-friendly)
+// ══════════════════════════════════════════════
+// Yahoo symbol → Stooq symbol
+const STOOQ_SYMS = {
+  'GGAL':    'ggal.us',
+  'GGAL.BA': 'ggal.ba',
+  'SPY':     'spy.us',
+  '^IXIC':   '^ndq',
+  '^DJI':    '^dji',
+  '^MERV':   '^merv',
+  'BMA.BA':  'bma.ba',
+  'BBAR.BA': 'bbar.ba',
+  'SUPV.BA': 'supv.ba',
+};
+const STOOQ_BASE = 'https://stooq.com/q/l/?f=sd2t2ohlcv&h&e=csv&s=';
+const STOOQ_CORS = 'https://corsproxy.io/?';
+
+async function fetchStooqSymbol(stooqSym) {
+  const rawUrl = STOOQ_BASE + stooqSym;
+  for (const u of [rawUrl, STOOQ_CORS + encodeURIComponent(rawUrl)]) {
+    try {
+      const r = await fetch(u, { cache: 'no-store' });
+      if (!r.ok) continue;
+      const text = await r.text();
+      const lines = text.trim().split('\n');
+      if (lines.length < 2) continue;
+      const headers = lines[0].split(',').map(h => h.trim());
+      const vals    = lines[1].split(',').map(v => v.trim());
+      const row = {};
+      headers.forEach((h, i) => row[h] = vals[i]);
+      const close = parseFloat(row['Close']);
+      const open  = parseFloat(row['Open']);
+      if (isNaN(close) || close <= 0) continue;
+      const chg = isNaN(open) ? 0 : close - open;
+      const pct = (!open || isNaN(open)) ? 0 : (chg / open) * 100;
+      return { price: close, change: chg, pct, volume: parseInt(row['Volume'] || '0'), open };
+    } catch { /* try next */ }
+  }
+  return null;
+}
 
 async function fetchYahoo() {
-  const url = YF_BASE + SYMBOLS.join(',');
-  let data;
-  // Intentar directo primero, luego cada proxy
-  const attempts = [
-    () => fetch(url, { headers: { 'Accept': 'application/json' } }),
-    ...PROXIES.map(p => () => fetch(p(url))),
-  ];
-  for (const attempt of attempts) {
-    try {
-      const r = await attempt();
-      if (!r.ok) continue;
-      const json = await r.json();
-      if (json?.quoteResponse?.result) { data = json; break; }
-    } catch { /* probar siguiente */ }
-  }
-  if (!data) { console.warn('Yahoo Finance: todos los proxies fallaron'); return; }
+  const fetches = Object.entries(STOOQ_SYMS).map(([ySym, sSym]) =>
+    fetchStooqSymbol(sSym).then(d => ({ sym: ySym, data: d }))
+  );
+  const results = await Promise.allSettled(fetches);
 
-  const quotes = data?.quoteResponse?.result;
-  if (!quotes) return;
+  let anyData = false;
+  for (const r of results) {
+    if (r.status !== 'fulfilled' || !r.value?.data) continue;
+    const { sym, data } = r.value;
+    const { price, change: chg, pct, volume: vol, open } = data;
+    anyData = true;
 
-  for (const q of quotes) {
-    const price   = q.regularMarketPrice;
-    const chg     = q.regularMarketChange;
-    const pct     = q.regularMarketChangePercent;
-    const vol     = q.regularMarketVolume;
-    const open    = q.regularMarketOpen;
-    const bid     = q.bid;
-    const ask     = q.ask;
-    const bidSize = (q.bidSize || 0) * 100;
-    const askSize = (q.askSize || 0) * 100;
-
-    switch (q.symbol) {
+    switch (sym) {
       case 'SPY':
         document.getElementById('spy-price').textContent  = '$' + fmt(price);
         document.getElementById('spy-change').innerHTML   = fmtChange(chg, pct);
@@ -877,7 +891,6 @@ async function fetchYahoo() {
         document.getElementById('merval-price').textContent = fmt(price, 0);
         document.getElementById('merval-change').innerHTML  = fmtChange(chg, pct);
         break;
-
       case 'BMA.BA':
         document.getElementById('bma-price').textContent  = '$' + fmt(price, 0);
         document.getElementById('bma-change').innerHTML   = fmtChange(chg, pct);
@@ -890,33 +903,33 @@ async function fetchYahoo() {
         document.getElementById('supv-price').textContent = '$' + fmt(price, 0);
         document.getElementById('supv-change').innerHTML  = fmtChange(chg, pct);
         break;
-
       case 'GGAL.BA':
         _ggalSpot = price;
-        document.getElementById('ggal-spot-price').textContent  = '$' + fmt(price);
-        document.getElementById('ggal-spot-change').innerHTML   = fmtChange(chg, pct);
-        document.getElementById('ggal-bank-price').textContent  = '$' + fmt(price, 0);
-        document.getElementById('ggal-bank-change').innerHTML   = fmtChange(chg, pct);
-        document.getElementById('ggal-spot-vol').textContent   = fmtK(vol);
-        document.getElementById('ggal-spot-open').textContent  = '$' + fmt(open);
-        renderBook('ggal-spot-book', bid, ask, bidSize, askSize, '$', 'spot-hint');
+        document.getElementById('ggal-spot-price').textContent = '$' + fmt(price);
+        document.getElementById('ggal-spot-change').innerHTML  = fmtChange(chg, pct);
+        document.getElementById('ggal-bank-price').textContent = '$' + fmt(price, 0);
+        document.getElementById('ggal-bank-change').innerHTML  = fmtChange(chg, pct);
+        document.getElementById('ggal-spot-vol').textContent  = fmtK(vol);
+        document.getElementById('ggal-spot-open').textContent = '$' + fmt(open);
         break;
-
       case 'GGAL':
         _ggalAdr = price;
         document.getElementById('ggal-adr-price').textContent = 'USD ' + fmt(price, 2);
         document.getElementById('ggal-adr-change').innerHTML  = fmtChange(chg, pct);
         document.getElementById('ggal-adr-vol').textContent   = fmtK(vol);
         document.getElementById('ggal-adr-open').textContent  = 'USD ' + fmt(open, 2);
-        renderBook('ggal-adr-book', bid, ask, bidSize, askSize, 'USD ', null);
         break;
     }
   }
 
-  updateRatio();
-  checkAlerts();
-  document.getElementById('last-update').textContent =
-    'Última actualización: ' + new Date().toLocaleTimeString('es-AR', { hour12: false });
+  if (anyData) {
+    updateRatio();
+    checkAlerts();
+    document.getElementById('last-update').textContent =
+      'Última actualización: ' + new Date().toLocaleTimeString('es-AR', { hour12: false });
+  } else {
+    console.warn('Stooq: sin datos');
+  }
 }
 
 function renderBook(tbodyId, bid, ask, bidSize, askSize, prefix, hintId) {
@@ -1024,6 +1037,7 @@ function connectMatriz(url) {
   }
 
   matrizWs.onopen = () => {
+    console.log('[MATRIZ] WS abierto:', url);
     setMatrizStatus('connected', 'Conectado — esperando datos...');
     document.getElementById('matriz-panel').classList.remove('open');
 
@@ -1033,26 +1047,26 @@ function connectMatriz(url) {
       { _req: 'S', topicType: 'md',    topics: ['md.bm_MERV_GGAL_24hs'],    replace: true  },
       { _req: 'S', topicType: 'trade', topics: ['trade.bm_MERV_GGAL_24hs'], replace: false },
     ];
-    subs.forEach(s => matrizWs.send(JSON.stringify(s)));
+    subs.forEach(s => { console.log('[MATRIZ] Enviando suscripción:', JSON.stringify(s)); matrizWs.send(JSON.stringify(s)); });
   };
 
   matrizWs.onmessage = (ev) => {
     try {
       const msg = JSON.parse(ev.data);
-      // DEBUG TEMPORAL — logear TODOS los mensajes
-      console.log('[MATRIZ ALL]', ev.data.substring(0, 300));
+      console.log('[MATRIZ MSG]', ev.data.substring(0, 300));
       handleMatrizMsg(msg);
     } catch (e) { /* ignorar mensajes no-JSON */ }
   };
 
-  matrizWs.onclose = () => {
+  matrizWs.onclose = (ev) => {
+    console.log('[MATRIZ] WS cerrado — código:', ev.code, 'razón:', ev.reason);
     matrizWs = null;
     setMatrizStatus('error', 'Sesión expirada — reconectando...');
-    // Intenta reconectar automáticamente luego de 3 segundos
     matrizReconnect = setTimeout(autoConnectMatriz, 3000);
   };
 
-  matrizWs.onerror = () => {
+  matrizWs.onerror = (ev) => {
+    console.log('[MATRIZ] WS error:', ev);
     setMatrizStatus('error', 'Error de conexión');
   };
 }
