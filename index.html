@@ -787,6 +787,7 @@ function _checkDolarVariation(name, newVal, prevVal, cooldownKey) {
 async function fetchDolar() {
   try {
     const res  = await fetch('https://dolarapi.com/v1/dolares');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     const mep  = data.find(d => d.casa === 'bolsa');
     const ccl  = data.find(d => d.casa === 'contadoconliqui');
@@ -839,12 +840,34 @@ const STOOQ_CORS = 'https://corsproxy.io/?';
 
 async function fetchStooqSymbol(stooqSym) {
   const rawUrl = STOOQ_BASE + stooqSym;
-  for (const u of [rawUrl, STOOQ_CORS + encodeURIComponent(rawUrl)]) {
+
+  const attempts = [
+    // 1. corsproxy.io → Stooq (proxy accede sin problemas a Stooq)
+    async () => {
+      const r = await fetch('https://corsproxy.io/?' + encodeURIComponent(rawUrl), { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return await r.text();
+    },
+    // 2. allorigins /get → devuelve JSON con .contents
+    async () => {
+      const r = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent(rawUrl), { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const j = await r.json();
+      return j.contents || '';
+    },
+    // 3. directo (funciona si Stooq algún día agrega CORS)
+    async () => {
+      const r = await fetch(rawUrl, { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return await r.text();
+    },
+  ];
+
+  for (const attempt of attempts) {
     try {
-      const r = await fetch(u, { cache: 'no-store' });
-      if (!r.ok) continue;
-      const text = await r.text();
-      const lines = text.trim().split('\n');
+      const text = await attempt();
+      if (!text || text.trim().length < 5) continue;
+      const lines = text.trim().replace(/\r/g, '').split('\n');
       if (lines.length < 2) continue;
       const headers = lines[0].split(',').map(h => h.trim());
       const vals    = lines[1].split(',').map(v => v.trim());
@@ -856,8 +879,11 @@ async function fetchStooqSymbol(stooqSym) {
       const chg = isNaN(open) ? 0 : close - open;
       const pct = (!open || isNaN(open)) ? 0 : (chg / open) * 100;
       return { price: close, change: chg, pct, volume: parseInt(row['Volume'] || '0'), open };
-    } catch { /* try next */ }
+    } catch (e) {
+      console.warn('[Stooq]', stooqSym, e.message);
+    }
   }
+  console.warn('[Stooq] sin datos para', stooqSym);
   return null;
 }
 
@@ -984,8 +1010,15 @@ function setMatrizStatus(state, msg) {
   document.getElementById('matriz-status-msg').textContent = msg || '';
 }
 
-// ── Auto-connect: lee sessionId + connectionId desde /api/v2/profile ──
+// ── Auto-connect: primero intenta URL guardada, luego profile endpoint ──
 async function autoConnectMatriz() {
+  // Si hay URL guardada en localStorage, reconectar directo (más confiable desde GitHub Pages)
+  const savedUrl = localStorage.getItem('matriz_wss');
+  if (savedUrl && savedUrl.startsWith('wss://')) {
+    connectMatriz(savedUrl);
+    return;
+  }
+
   setMatrizStatus('', 'Obteniendo sesión...');
   try {
     const ts  = `${Date.now()}-${Math.floor(Math.random() * 999999)}`;
@@ -1061,8 +1094,14 @@ function connectMatriz(url) {
   matrizWs.onclose = (ev) => {
     console.log('[MATRIZ] WS cerrado — código:', ev.code, 'razón:', ev.reason);
     matrizWs = null;
-    setMatrizStatus('error', 'Sesión expirada — reconectando...');
-    matrizReconnect = setTimeout(autoConnectMatriz, 3000);
+    // Si hay URL guardada, reconectar directamente con ella (evita CORS del profile fetch)
+    const savedUrl = localStorage.getItem('matriz_wss');
+    if (savedUrl && savedUrl.startsWith('wss://')) {
+      setMatrizStatus('error', 'Reconectando...');
+      matrizReconnect = setTimeout(() => connectMatriz(savedUrl), 3000);
+    } else {
+      setMatrizStatus('error', 'Desconectado — reconectá manualmente');
+    }
   };
 
   matrizWs.onerror = (ev) => {
