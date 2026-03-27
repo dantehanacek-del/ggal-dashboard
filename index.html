@@ -113,6 +113,21 @@
     .down { color: var(--red); }
     .flat { color: var(--muted); }
 
+    /* ── SECTOR BANCARIO ── */
+    .banking-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0;
+      margin-top: 5px;
+      padding-top: 5px;
+      border-top: 1px solid var(--border);
+    }
+    .bank-item { text-align: center; padding: 2px 6px; border-right: 1px solid var(--border); }
+    .bank-item:last-child { border-right: none; }
+    .bank-name   { font-size: 9px; color: var(--muted); margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.8px; }
+    .bank-price  { font-size: 13px; font-weight: 700; font-family: monospace; }
+    .bank-change { font-size: 10px; margin-top: 1px; font-family: monospace; }
+
     /* ── ROW 2: PUNTAS ── */
     .row-puntas { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 
@@ -485,6 +500,23 @@
           <div class="index-change" id="merval-change">--</div>
         </div>
       </div>
+      <div class="banking-grid">
+        <div class="bank-item">
+          <div class="bank-name">BMA</div>
+          <div class="bank-price" id="bma-price">--</div>
+          <div class="bank-change" id="bma-change">--</div>
+        </div>
+        <div class="bank-item">
+          <div class="bank-name">BBAR</div>
+          <div class="bank-price" id="bbar-price">--</div>
+          <div class="bank-change" id="bbar-change">--</div>
+        </div>
+        <div class="bank-item">
+          <div class="bank-name">SUPV</div>
+          <div class="bank-price" id="supv-price">--</div>
+          <div class="bank-change" id="supv-change">--</div>
+        </div>
+      </div>
     </div>
 
   </div>
@@ -736,7 +768,7 @@ async function fetchDolar() {
 // ══════════════════════════════════════════════
 //  YAHOO FINANCE
 // ══════════════════════════════════════════════
-const SYMBOLS = ['GGAL', 'GGAL.BA', 'SPY', '%5EIXIC', '%5EDJI', '%5EMERV'];
+const SYMBOLS = ['GGAL', 'GGAL.BA', 'SPY', '%5EIXIC', '%5EDJI', '%5EMERV', 'BMA.BA', 'BBAR.BA', 'SUPV.BA'];
 const YF_BASE = 'https://query1.finance.yahoo.com/v8/finance/quote?symbols=';
 const PROXY   = 'https://api.allorigins.win/raw?url=';
 
@@ -787,6 +819,19 @@ async function fetchYahoo() {
       case '^MERV':
         document.getElementById('merval-price').textContent = fmt(price, 0);
         document.getElementById('merval-change').innerHTML  = fmtChange(chg, pct);
+        break;
+
+      case 'BMA.BA':
+        document.getElementById('bma-price').textContent  = '$' + fmt(price, 0);
+        document.getElementById('bma-change').innerHTML   = fmtChange(chg, pct);
+        break;
+      case 'BBAR.BA':
+        document.getElementById('bbar-price').textContent = '$' + fmt(price, 0);
+        document.getElementById('bbar-change').innerHTML  = fmtChange(chg, pct);
+        break;
+      case 'SUPV.BA':
+        document.getElementById('supv-price').textContent = '$' + fmt(price, 0);
+        document.getElementById('supv-change').innerHTML  = fmtChange(chg, pct);
         break;
 
       case 'GGAL.BA':
