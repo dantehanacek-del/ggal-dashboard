@@ -1,0 +1,1228 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GGAL Trading Dashboard</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #1c2128;
+      --border: #30363d;
+      --green: #3fb950;
+      --red: #f85149;
+      --yellow: #e3b341;
+      --blue: #58a6ff;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --bid: #3fb950;
+      --ask: #f85149;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, monospace;
+      font-size: 13px;
+      min-height: 100vh;
+    }
+
+    /* ── HEADER ── */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header-left { display: flex; align-items: center; gap: 12px; }
+    .header-title { font-size: 17px; font-weight: 700; color: var(--blue); letter-spacing: 0.5px; }
+    .header-right { display: flex; align-items: center; gap: 16px; }
+    #clock { font-size: 15px; font-family: monospace; color: var(--muted); }
+    #last-update { font-size: 11px; color: var(--muted); }
+
+    /* ── LAYOUT ── */
+    .main { padding: 6px 8px; display: flex; flex-direction: column; gap: 6px; }
+
+    /* ── CARD ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+    }
+    .card-title {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--muted);
+      margin-bottom: 7px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* ── BADGES ── */
+    .badge {
+      display: inline-block;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    .badge-live { background: #f85149; color: #fff; }
+    .badge-delay { background: #e3b341; color: #0d1117; }
+
+    /* ── ROW 1: DOLAR + INDICES ── */
+    .row-top {
+      display: grid;
+      grid-template-columns: 230px 1fr;
+      gap: 6px;
+      align-items: stretch;
+    }
+
+    .dolar-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .dolar-item { text-align: center; }
+    .dolar-label { font-size: 9px; color: var(--muted); margin-bottom: 2px; }
+    .dolar-buy  { font-size: 17px; font-weight: 700; color: var(--green); font-family: monospace; }
+    .dolar-sell { font-size: 11px; color: var(--muted); margin-top: 1px; }
+    .dolar-update { font-size: 9px; color: var(--muted); text-align: center; margin-top: 5px; }
+
+    .indices-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0;
+    }
+    .index-item {
+      text-align: center;
+      padding: 3px 6px;
+      border-right: 1px solid var(--border);
+    }
+    .index-item:last-child { border-right: none; }
+    .index-name  { font-size: 9px; color: var(--muted); margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.8px; }
+    .index-price { font-size: 15px; font-weight: 700; font-family: monospace; }
+    .index-change { font-size: 11px; margin-top: 2px; font-family: monospace; }
+    .up   { color: var(--green); }
+    .down { color: var(--red); }
+    .flat { color: var(--muted); }
+
+    /* ── ROW 2: PUNTAS ── */
+    .row-puntas { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+
+    .puntas-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 6px;
+    }
+    .puntas-price { font-size: 20px; font-weight: 700; font-family: monospace; margin-top: 1px; }
+    .puntas-change { font-size: 11px; margin-top: 2px; }
+    .puntas-right { text-align: right; }
+    .puntas-vol-label { font-size: 9px; color: var(--muted); }
+    .puntas-vol { font-size: 13px; font-weight: 600; font-family: monospace; margin-top: 1px; }
+
+    .divider { border: none; border-top: 1px solid var(--border); margin: 5px 0; }
+
+    .book-table { width: 100%; border-collapse: collapse; }
+    .book-table th {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--muted);
+      padding: 2px 5px;
+      text-align: right;
+      border-bottom: 1px solid var(--border);
+    }
+    .book-table th:first-child { text-align: left; }
+    .book-table td { padding: 3px 5px; text-align: right; font-family: monospace; font-size: 12px; }
+    .book-table td:first-child { text-align: left; }
+    .book-table .side-bid { color: var(--bid); }
+    .book-table .side-ask { color: var(--ask); }
+    .book-table .side-label {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--muted);
+    }
+    .book-bar-cell { width: 60px; }
+    .book-bar {
+      height: 6px;
+      border-radius: 3px;
+      min-width: 4px;
+    }
+    .book-bar.bid-bar { background: var(--bid); opacity: 0.6; margin-left: auto; }
+    .book-bar.ask-bar { background: var(--ask); opacity: 0.6; }
+
+    .spread-row td {
+      text-align: center;
+      font-size: 10px;
+      color: var(--muted);
+      padding: 4px;
+      border-top: 1px dashed var(--border);
+      border-bottom: 1px dashed var(--border);
+    }
+
+    .connect-hint {
+      text-align: center;
+      padding: 6px;
+      color: var(--muted);
+      font-size: 10px;
+      border: 1px dashed var(--border);
+      border-radius: 4px;
+      margin-top: 5px;
+    }
+
+    /* ── ROW 3: CHARTS + NEWS ── */
+    .row-bottom {
+      display: grid;
+      grid-template-columns: 1fr 1fr 300px;
+      gap: 6px;
+    }
+    .chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .chart-header {
+      padding: 6px 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+    }
+    .chart-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+
+    /* ── NEWS (panel lateral) ── */
+    .news-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .news-header {
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .news-title { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+    #news-container { flex: 1; overflow-y: auto; }
+    #news-container::-webkit-scrollbar { width: 3px; }
+    #news-container::-webkit-scrollbar-track { background: var(--bg); }
+    #news-container::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .news-item {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--border);
+      transition: background 0.15s;
+    }
+    .news-item:hover { background: var(--surface2); }
+    .news-time { font-size: 11px; color: var(--muted); white-space: nowrap; margin-top: 1px; font-family: monospace; min-width: 38px; }
+    .news-source { font-size: 9px; color: var(--blue); white-space: nowrap; font-weight: 700; min-width: 55px; margin-top: 3px; }
+    .news-text { font-size: 12px; line-height: 1.45; color: var(--text); }
+    .news-text a { color: inherit; text-decoration: none; }
+    .news-text a:hover { color: var(--blue); }
+
+    /* ── MATRIZ CONNECT ── */
+    .matriz-btn {
+      display: flex; align-items: center; gap: 5px;
+      cursor: pointer; padding: 3px 8px;
+      border: 1px solid var(--border); border-radius: 4px;
+      font-size: 10px; font-weight: 700; letter-spacing: 0.8px;
+      color: var(--muted); user-select: none; transition: all 0.2s;
+    }
+    .matriz-btn:hover { border-color: var(--blue); color: var(--blue); }
+    .matriz-btn.connected { border-color: var(--green); color: var(--green); }
+    .matriz-btn.error     { border-color: var(--red);   color: var(--red);   }
+    #matriz-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+    .matriz-btn.connected #matriz-dot { background: var(--green); animation: pulse 2s infinite; }
+    .matriz-btn.error     #matriz-dot { background: var(--red); }
+
+    #matriz-panel {
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      padding: 7px 12px;
+      display: none;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: nowrap;
+    }
+    #matriz-panel.open { display: flex; }
+    .matriz-panel-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); white-space: nowrap; }
+    #matriz-url-input {
+      flex: 1; min-width: 0;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+      color: var(--text); font-family: monospace; font-size: 10px;
+      padding: 4px 7px; outline: none;
+    }
+    #matriz-url-input:focus { border-color: var(--blue); }
+    #matriz-url-input::placeholder { color: var(--muted); }
+    .matriz-ok-btn {
+      background: #1a2e1f; border: 1px solid var(--green); border-radius: 4px;
+      color: var(--green); font-size: 10px; font-weight: 700;
+      padding: 4px 10px; cursor: pointer; white-space: nowrap;
+    }
+    .matriz-ok-btn:hover { background: #243d29; }
+    .matriz-disc-btn {
+      background: transparent; border: 1px solid var(--border); border-radius: 4px;
+      color: var(--muted); font-size: 10px; padding: 4px 8px; cursor: pointer;
+    }
+    .matriz-disc-btn:hover { border-color: var(--red); color: var(--red); }
+    #matriz-status-msg { font-size: 10px; color: var(--muted); white-space: nowrap; }
+
+    /* ── SKELETON / LOADING ── */
+    .loading { color: var(--muted); font-size: 12px; text-align: center; padding: 20px; }
+
+    /* ── ERROR ── */
+    .error-text { color: var(--red); font-size: 11px; }
+
+    /* ── REFRESH INDICATOR ── */
+    #refresh-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--green);
+      display: inline-block;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* ── RATIO ADR/CCL — strip compacto ── */
+    .ratio-strip {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 12px;
+      flex-wrap: nowrap;
+      overflow: hidden;
+    }
+    .ratio-strip-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); white-space: nowrap; }
+    .ratio-strip-sep   { color: var(--border); }
+    .ratio-strip-item  { color: var(--muted); white-space: nowrap; }
+    .ratio-strip-item strong { color: var(--text); font-family: monospace; font-size: 13px; }
+    .prima     { color: var(--red)   !important; font-weight: 700; font-family: monospace; font-size: 13px; }
+    .descuento { color: var(--green) !important; font-weight: 700; font-family: monospace; font-size: 13px; }
+    .neutro    { color: var(--muted) !important; font-weight: 700; font-family: monospace; font-size: 13px; }
+    #ratio-desc { font-size: 10px; color: var(--muted); white-space: nowrap; }
+
+    /* ── ALERTAS ── */
+    .alert-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px solid var(--border);
+    }
+    .alert-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; white-space: nowrap; }
+    .alert-input {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-family: monospace;
+      font-size: 13px;
+      padding: 4px 8px;
+      outline: none;
+      min-width: 0;
+    }
+    .alert-input:focus { border-color: var(--blue); }
+    .alert-input::placeholder { color: var(--muted); }
+    .alert-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-size: 12px;
+      padding: 4px 8px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .alert-btn:hover { border-color: var(--blue); color: var(--blue); }
+    .alert-dir-up   { color: var(--green) !important; border-color: var(--green) !important; }
+    .alert-dir-down { color: var(--red)   !important; border-color: var(--red)   !important; }
+    .alert-set  { background: #1f3a2a; border-color: var(--green); color: var(--green); font-weight: 700; }
+    .alert-set:hover { background: #2a4d39; }
+    .alert-clear { color: var(--muted); }
+    .alert-active {
+      font-size: 11px;
+      margin-top: 6px;
+      padding: 5px 8px;
+      border-radius: 4px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .alert-triggered {
+      border-color: var(--red) !important;
+      color: var(--red);
+      animation: flash-alert 0.6s ease 4;
+    }
+    @keyframes flash-alert {
+      0%, 100% { background: var(--surface2); }
+      50%       { background: rgba(248,81,73,0.25); }
+    }
+    .price-flash { animation: flash-alert 0.6s ease 4; border-radius: 4px; }
+
+    /* ── TOAST NOTIFICATION ── */
+    #alert-toast {
+      position: fixed;
+      top: 60px;
+      right: 16px;
+      background: var(--surface);
+      border: 1px solid var(--red);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 13px;
+      color: var(--text);
+      z-index: 999;
+      min-width: 240px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      opacity: 0;
+      transform: translateX(20px);
+      transition: opacity 0.3s, transform 0.3s;
+      pointer-events: none;
+    }
+    #alert-toast.show { opacity: 1; transform: translateX(0); }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <span id="refresh-dot"></span>
+    <span class="header-title">GGAL · Trading Dashboard</span>
+  </div>
+  <div class="header-right">
+    <span id="last-update">Actualizando...</span>
+    <div class="matriz-btn" id="matriz-btn" onclick="toggleMatrizPanel()" title="Conectar Matriz WebSocket">
+      <span id="matriz-dot"></span>
+      <span>MATRIZ</span>
+    </div>
+    <span id="clock">--:--:--</span>
+  </div>
+</header>
+
+<div id="matriz-panel">
+  <span class="matriz-panel-label">Matriz ECO</span>
+  <button class="matriz-ok-btn" onclick="autoConnectMatriz()">⚡ Conectar automáticamente</button>
+  <span class="matriz-panel-label" style="color:var(--border)">|</span>
+  <span class="matriz-panel-label">o pegá URL WSS manual:</span>
+  <input id="matriz-url-input" type="text" placeholder="wss://matriz.eco.xoms.com.ar/ws?session_id=..."/>
+  <button class="matriz-ok-btn" onclick="connectMatrizFromInput()">↵</button>
+  <button class="matriz-disc-btn" onclick="disconnectMatriz()">✕ Desconectar</button>
+  <span id="matriz-status-msg"></span>
+</div>
+
+<div class="main">
+
+  <!-- ── ROW 1: DOLAR + INDICES ── -->
+  <div class="row-top">
+
+    <!-- Dolar -->
+    <div class="card">
+      <div class="card-title">Tipo de Cambio <span class="badge badge-live">LIVE</span></div>
+      <div class="dolar-grid">
+        <div class="dolar-item">
+          <div class="dolar-label">MEP · Compra</div>
+          <div class="dolar-buy" id="mep-buy">--</div>
+          <div class="dolar-sell" id="mep-sell">Venta: --</div>
+        </div>
+        <div class="dolar-item">
+          <div class="dolar-label">CCL · Compra</div>
+          <div class="dolar-buy" id="ccl-buy">--</div>
+          <div class="dolar-sell" id="ccl-sell">Venta: --</div>
+        </div>
+      </div>
+      <div class="dolar-update" id="dolar-update"></div>
+    </div>
+
+    <!-- Indices -->
+    <div class="card">
+      <div class="card-title">Índices <span class="badge badge-live">LIVE</span></div>
+      <div class="indices-grid">
+        <div class="index-item">
+          <div class="index-name">S&amp;P 500</div>
+          <div class="index-price" id="spy-price">--</div>
+          <div class="index-change" id="spy-change">--</div>
+        </div>
+        <div class="index-item">
+          <div class="index-name">NASDAQ</div>
+          <div class="index-price" id="nasdaq-price">--</div>
+          <div class="index-change" id="nasdaq-change">--</div>
+        </div>
+        <div class="index-item">
+          <div class="index-name">DOW JONES</div>
+          <div class="index-price" id="dow-price">--</div>
+          <div class="index-change" id="dow-change">--</div>
+        </div>
+        <div class="index-item">
+          <div class="index-name">MERVAL</div>
+          <div class="index-price" id="merval-price">--</div>
+          <div class="index-change" id="merval-change">--</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── RATIO ADR / CCL ── -->
+  <div class="ratio-strip">
+    <span class="ratio-strip-label">Ratio ADR/CCL</span>
+    <span class="ratio-strip-sep">·</span>
+    <span class="ratio-strip-item">Teórico <strong id="ratio-teorico">--</strong></span>
+    <span class="ratio-strip-sep">·</span>
+    <span class="ratio-strip-item">Real <strong id="ratio-real">--</strong></span>
+    <span class="ratio-strip-sep">·</span>
+    <span id="ratio-diff" class="neutro">--</span>
+    <span id="ratio-desc">--</span>
+  </div>
+
+  <!-- ── ROW 2: PUNTAS ── -->
+  <div class="row-puntas">
+
+    <!-- GGAL BYMA -->
+    <div class="card">
+      <div class="card-title">GGAL · BYMA 24hs <span class="badge badge-delay">~15 min</span></div>
+      <div class="puntas-top">
+        <div>
+          <div class="puntas-price" id="ggal-spot-price">--</div>
+          <div class="puntas-change" id="ggal-spot-change">--</div>
+        </div>
+        <div class="puntas-right">
+          <div class="puntas-vol-label">Volumen</div>
+          <div class="puntas-vol" id="ggal-spot-vol">--</div>
+          <div class="puntas-vol-label" style="margin-top:6px">Apertura</div>
+          <div style="font-size:13px;font-family:monospace" id="ggal-spot-open">--</div>
+        </div>
+      </div>
+      <hr class="divider" />
+      <table class="book-table">
+        <thead>
+          <tr>
+            <th style="text-align:left">Lado</th>
+            <th>Precio</th>
+            <th>Cant.</th>
+            <th class="book-bar-cell"></th>
+          </tr>
+        </thead>
+        <tbody id="ggal-spot-book">
+          <tr><td colspan="4"><div class="loading">Cargando...</div></td></tr>
+        </tbody>
+      </table>
+      <div class="connect-hint" id="spot-hint" style="display:none">
+        📡 Para ver puntas completas, conectar Matriz<br/>
+        <small style="color:var(--muted)">Abrí DevTools → Network en Matriz para obtener los endpoints</small>
+      </div>
+      <div class="alert-row">
+        <span class="alert-label">Alerta</span>
+        <input type="number" id="alert-spot-input" class="alert-input" placeholder="Precio ARS..." step="1"/>
+        <button class="alert-btn alert-dir" id="alert-spot-dir" onclick="toggleAlertDir('spot')" title="Dirección">▲</button>
+        <button class="alert-btn alert-set" onclick="setAlert('spot')">SET</button>
+        <button class="alert-btn alert-clear" onclick="clearAlert('spot')">✕</button>
+      </div>
+      <div class="alert-active" id="alert-spot-active" style="display:none;"></div>
+    </div>
+
+    <!-- GGAL ADR -->
+    <div class="card">
+      <div class="card-title">GGAL · NASDAQ ADR <span class="badge badge-delay">~15 min</span></div>
+      <div class="puntas-top">
+        <div>
+          <div class="puntas-price" id="ggal-adr-price">--</div>
+          <div class="puntas-change" id="ggal-adr-change">--</div>
+        </div>
+        <div class="puntas-right">
+          <div class="puntas-vol-label">Volumen</div>
+          <div class="puntas-vol" id="ggal-adr-vol">--</div>
+          <div class="puntas-vol-label" style="margin-top:6px">Apertura</div>
+          <div style="font-size:13px;font-family:monospace" id="ggal-adr-open">--</div>
+        </div>
+      </div>
+      <hr class="divider" />
+      <table class="book-table">
+        <thead>
+          <tr>
+            <th style="text-align:left">Lado</th>
+            <th>Precio</th>
+            <th>Cant.</th>
+            <th class="book-bar-cell"></th>
+          </tr>
+        </thead>
+        <tbody id="ggal-adr-book">
+          <tr><td colspan="4"><div class="loading">Cargando...</div></td></tr>
+        </tbody>
+      </table>
+      <div class="alert-row">
+        <span class="alert-label">Alerta</span>
+        <input type="number" id="alert-adr-input" class="alert-input" placeholder="Precio USD..." step="0.01"/>
+        <button class="alert-btn alert-dir" id="alert-adr-dir" onclick="toggleAlertDir('adr')" title="Dirección">▲</button>
+        <button class="alert-btn alert-set" onclick="setAlert('adr')">SET</button>
+        <button class="alert-btn alert-clear" onclick="clearAlert('adr')">✕</button>
+      </div>
+      <div class="alert-active" id="alert-adr-active" style="display:none;"></div>
+    </div>
+
+  </div>
+
+  <!-- ── ROW 3: CHARTS + NEWS ── -->
+  <div class="row-bottom">
+    <div class="chart-card">
+      <div class="chart-header">
+        <span class="chart-label">GGAL · BYMA · 5 min</span>
+      </div>
+      <div id="tv-ggal-spot" style="height:420px;"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-header">
+        <span class="chart-label">GGAL · ADR · NASDAQ · 5 min</span>
+      </div>
+      <div id="tv-ggal-adr" style="height:420px;"></div>
+    </div>
+    <div class="news-card">
+      <div class="news-header">
+        <span class="news-title">Noticias</span>
+        <span class="badge badge-live">LIVE</span>
+        <span style="font-size:9px;color:var(--muted);">FinancialJuice</span>
+      </div>
+      <div id="fj-widget-inner" style="height:100%;min-height:420px;"></div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<div id="alert-toast"></div>
+
+<!-- ── TRADINGVIEW ── -->
+<script src="https://s3.tradingview.com/tv.js"></script>
+<script>
+  // ── TradingView charts ──
+  new TradingView.widget({
+    container_id: "tv-ggal-spot",
+    symbol: "BYMA:GGAL",
+    interval: "5",
+    timezone: "America/Argentina/Buenos_Aires",
+    theme: "dark",
+    style: "1",
+    locale: "es",
+    width: "100%",
+    height: 420,
+    toolbar_bg: "#161b22",
+    hide_top_toolbar: false,
+    hide_legend: false,
+    save_image: false,
+    allow_symbol_change: false,
+  });
+
+  new TradingView.widget({
+    container_id: "tv-ggal-adr",
+    symbol: "NASDAQ:GGAL",
+    interval: "5",
+    timezone: "America/New_York",
+    theme: "dark",
+    style: "1",
+    locale: "es",
+    width: "100%",
+    height: 420,
+    toolbar_bg: "#161b22",
+    hide_top_toolbar: false,
+    hide_legend: false,
+    save_image: false,
+    allow_symbol_change: false,
+  });
+</script>
+
+<script>
+// ══════════════════════════════════════════════
+//  UTILS
+// ══════════════════════════════════════════════
+function fmt(n, dec = 2) {
+  if (n == null || isNaN(n)) return '--';
+  return Number(n).toLocaleString('es-AR', {
+    minimumFractionDigits: dec,
+    maximumFractionDigits: dec
+  });
+}
+
+function fmtK(n) {
+  if (n == null || isNaN(n)) return '--';
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M';
+  if (n >= 1_000)     return (n / 1_000).toFixed(1) + 'K';
+  return String(n);
+}
+
+function colorClass(val) {
+  if (val > 0) return 'up';
+  if (val < 0) return 'down';
+  return 'flat';
+}
+
+function fmtChange(chg, pct) {
+  const sign = chg >= 0 ? '+' : '';
+  const cls  = colorClass(chg);
+  return `<span class="${cls}">${sign}${fmt(chg)} (${sign}${fmt(pct)}%)</span>`;
+}
+
+// ══════════════════════════════════════════════
+//  ESTADO COMPARTIDO (ratio + alertas)
+// ══════════════════════════════════════════════
+let _cclVenta = null;
+let _ggalAdr  = null;
+let _ggalSpot = null;
+
+// ══════════════════════════════════════════════
+//  CLOCK
+// ══════════════════════════════════════════════
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.toLocaleTimeString('es-AR', { hour12: false, timeZone: 'America/Argentina/Buenos_Aires' });
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ══════════════════════════════════════════════
+//  DOLAR API
+// ══════════════════════════════════════════════
+async function fetchDolar() {
+  try {
+    const res  = await fetch('https://dolarapi.com/v1/dolares');
+    const data = await res.json();
+    const mep  = data.find(d => d.casa === 'bolsa');
+    const ccl  = data.find(d => d.casa === 'contadoconliqui');
+
+    if (mep) {
+      document.getElementById('mep-buy').textContent  = '$' + fmt(mep.compra);
+      document.getElementById('mep-sell').textContent = 'Venta: $' + fmt(mep.venta);
+    }
+    if (ccl) {
+      document.getElementById('ccl-buy').textContent  = '$' + fmt(ccl.compra);
+      document.getElementById('ccl-sell').textContent = 'Venta: $' + fmt(ccl.venta);
+    }
+    if (ccl) { _cclVenta = ccl.venta; updateRatio(); }
+    if (mep) {
+      const ts = new Date(mep.fechaActualizacion);
+      document.getElementById('dolar-update').textContent =
+        'Actualizado: ' + ts.toLocaleTimeString('es-AR', { hour12: false });
+    }
+  } catch (e) {
+    console.warn('Dolar error:', e);
+  }
+}
+
+// ══════════════════════════════════════════════
+//  YAHOO FINANCE
+// ══════════════════════════════════════════════
+const SYMBOLS = ['GGAL', 'GGAL.BA', 'SPY', '%5EIXIC', '%5EDJI', '%5EMERV'];
+const YF_BASE = 'https://query1.finance.yahoo.com/v8/finance/quote?symbols=';
+const PROXY   = 'https://api.allorigins.win/raw?url=';
+
+async function fetchYahoo() {
+  const url = YF_BASE + SYMBOLS.join(',');
+  let data;
+  try {
+    const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    if (!r.ok) throw new Error('direct failed');
+    data = await r.json();
+  } catch {
+    try {
+      const r = await fetch(PROXY + encodeURIComponent(url));
+      data = await r.json();
+    } catch (e) {
+      console.warn('Yahoo Finance error:', e);
+      return;
+    }
+  }
+
+  const quotes = data?.quoteResponse?.result;
+  if (!quotes) return;
+
+  for (const q of quotes) {
+    const price   = q.regularMarketPrice;
+    const chg     = q.regularMarketChange;
+    const pct     = q.regularMarketChangePercent;
+    const vol     = q.regularMarketVolume;
+    const open    = q.regularMarketOpen;
+    const bid     = q.bid;
+    const ask     = q.ask;
+    const bidSize = (q.bidSize || 0) * 100;
+    const askSize = (q.askSize || 0) * 100;
+
+    switch (q.symbol) {
+      case 'SPY':
+        document.getElementById('spy-price').textContent  = '$' + fmt(price);
+        document.getElementById('spy-change').innerHTML   = fmtChange(chg, pct);
+        break;
+      case '^IXIC':
+        document.getElementById('nasdaq-price').textContent = fmt(price, 0);
+        document.getElementById('nasdaq-change').innerHTML  = fmtChange(chg, pct);
+        break;
+      case '^DJI':
+        document.getElementById('dow-price').textContent  = fmt(price, 0);
+        document.getElementById('dow-change').innerHTML   = fmtChange(chg, pct);
+        break;
+      case '^MERV':
+        document.getElementById('merval-price').textContent = fmt(price, 0);
+        document.getElementById('merval-change').innerHTML  = fmtChange(chg, pct);
+        break;
+
+      case 'GGAL.BA':
+        _ggalSpot = price;
+        document.getElementById('ggal-spot-price').textContent = '$' + fmt(price);
+        document.getElementById('ggal-spot-change').innerHTML  = fmtChange(chg, pct);
+        document.getElementById('ggal-spot-vol').textContent   = fmtK(vol);
+        document.getElementById('ggal-spot-open').textContent  = '$' + fmt(open);
+        renderBook('ggal-spot-book', bid, ask, bidSize, askSize, '$', 'spot-hint');
+        break;
+
+      case 'GGAL':
+        _ggalAdr = price;
+        document.getElementById('ggal-adr-price').textContent = 'USD ' + fmt(price, 2);
+        document.getElementById('ggal-adr-change').innerHTML  = fmtChange(chg, pct);
+        document.getElementById('ggal-adr-vol').textContent   = fmtK(vol);
+        document.getElementById('ggal-adr-open').textContent  = 'USD ' + fmt(open, 2);
+        renderBook('ggal-adr-book', bid, ask, bidSize, askSize, 'USD ', null);
+        break;
+    }
+  }
+
+  updateRatio();
+  checkAlerts();
+  document.getElementById('last-update').textContent =
+    'Última actualización: ' + new Date().toLocaleTimeString('es-AR', { hour12: false });
+}
+
+function renderBook(tbodyId, bid, ask, bidSize, askSize, prefix, hintId) {
+  const tbody = document.getElementById(tbodyId);
+  if (!bid && !ask) {
+    tbody.innerHTML = `<tr><td colspan="4"><div class="loading">Sin datos de puntas</div></td></tr>`;
+    return;
+  }
+  const spread    = ask - bid;
+  const spreadPct = bid > 0 ? ((spread / bid) * 100).toFixed(3) : '--';
+  const maxVol    = Math.max(bidSize, askSize) || 1;
+  const bidPct    = Math.round((bidSize / maxVol) * 56);
+  const askPct    = Math.round((askSize / maxVol) * 56);
+
+  tbody.innerHTML = `
+    <tr>
+      <td class="side-bid side-label">COMPRA</td>
+      <td class="side-bid">${prefix}${fmt(bid)}</td>
+      <td class="side-bid">${fmtK(bidSize)}</td>
+      <td><div class="book-bar bid-bar" style="width:${bidPct}px"></div></td>
+    </tr>
+    <tr class="spread-row">
+      <td colspan="4">spread ${prefix}${fmt(spread)} · ${spreadPct}%</td>
+    </tr>
+    <tr>
+      <td class="side-ask side-label">VENTA</td>
+      <td class="side-ask">${prefix}${fmt(ask)}</td>
+      <td class="side-ask">${fmtK(askSize)}</td>
+      <td><div class="book-bar ask-bar" style="width:${askPct}px"></div></td>
+    </tr>
+  `;
+
+  if (hintId) document.getElementById(hintId).style.display = 'block';
+}
+
+// ══════════════════════════════════════════════
+//  MATRIZ WEBSOCKET
+// ══════════════════════════════════════════════
+const MATRIZ_BASE = 'https://matriz.eco.xoms.com.ar';
+const MATRIZ_WSS  = 'wss://matriz.eco.xoms.com.ar/ws';
+
+let matrizWs        = null;
+let matrizReconnect = null;
+
+function toggleMatrizPanel() {
+  document.getElementById('matriz-panel').classList.toggle('open');
+}
+
+function setMatrizStatus(state, msg) {
+  const btn = document.getElementById('matriz-btn');
+  btn.className = 'matriz-btn ' + state;
+  document.getElementById('matriz-status-msg').textContent = msg || '';
+}
+
+// ── Auto-connect: lee sessionId + connectionId desde /api/v2/profile ──
+async function autoConnectMatriz() {
+  setMatrizStatus('', 'Obteniendo sesión...');
+  try {
+    const ts  = `${Date.now()}-${Math.floor(Math.random() * 999999)}`;
+    const res = await fetch(`${MATRIZ_BASE}/api/v2/profile?_ds=${ts}`, {
+      credentials: 'include',
+    });
+    if (!res.ok) throw new Error('No autenticado — abrí Matriz e iniciá sesión primero');
+    const profile = await res.json();
+
+    const { sessionId, connectionId } = profile;
+    if (!sessionId || !connectionId) throw new Error('Sesión inválida — intentá reloguearte en Matriz');
+
+    if (profile.defaultAccount?.account) {
+      localStorage.setItem('matriz_account', profile.defaultAccount.account);
+    }
+
+    const url = `${MATRIZ_WSS}?session_id=${encodeURIComponent(sessionId)}&conn_id=${encodeURIComponent(connectionId)}`;
+    connectMatriz(url);
+
+  } catch (e) {
+    setMatrizStatus('error', e.message);
+  }
+}
+
+function connectMatrizFromInput() {
+  const url = document.getElementById('matriz-url-input').value.trim();
+  if (!url.startsWith('wss://')) {
+    setMatrizStatus('error', 'URL inválida — debe empezar con wss://');
+    return;
+  }
+  connectMatriz(url);
+}
+
+function disconnectMatriz() {
+  clearTimeout(matrizReconnect);
+  if (matrizWs) { matrizWs.onclose = null; matrizWs.close(); matrizWs = null; }
+  setMatrizStatus('', 'Desconectado');
+}
+
+function connectMatriz(url) {
+  if (matrizWs) { matrizWs.onclose = null; matrizWs.close(); }
+  setMatrizStatus('', 'Conectando...');
+
+  try {
+    matrizWs = new WebSocket(url);
+  } catch (e) {
+    setMatrizStatus('error', 'Error al conectar');
+    return;
+  }
+
+  matrizWs.onopen = () => {
+    setMatrizStatus('connected', 'Conectado — esperando datos...');
+    document.getElementById('matriz-panel').classList.remove('open');
+
+    // Suscribir a GGAL book, market data y trades
+    const subs = [
+      { _req: 'S', topicType: 'book',  topics: ['book.bm_MERV_GGAL_24hs'],  replace: true  },
+      { _req: 'S', topicType: 'md',    topics: ['md.bm_MERV_GGAL_24hs'],    replace: true  },
+      { _req: 'S', topicType: 'trade', topics: ['trade.bm_MERV_GGAL_24hs'], replace: false },
+    ];
+    subs.forEach(s => matrizWs.send(JSON.stringify(s)));
+  };
+
+  matrizWs.onmessage = (ev) => {
+    try {
+      const msg = JSON.parse(ev.data);
+      handleMatrizMsg(msg);
+    } catch (e) { /* ignorar mensajes no-JSON */ }
+  };
+
+  matrizWs.onclose = () => {
+    matrizWs = null;
+    setMatrizStatus('error', 'Sesión expirada — reconectando...');
+    // Intenta reconectar automáticamente luego de 3 segundos
+    matrizReconnect = setTimeout(autoConnectMatriz, 3000);
+  };
+
+  matrizWs.onerror = () => {
+    setMatrizStatus('error', 'Error de conexión');
+  };
+}
+
+function handleMatrizMsg(msg) {
+  const t = msg.t || '';
+  const d = msg.d;
+  if (!d) return;
+
+  if (t.startsWith('book')) {
+    renderMatrizBook(d);
+    setMatrizStatus('connected', 'LIVE ● ' + new Date().toLocaleTimeString('es-AR', { hour12: false }));
+  } else if (t.startsWith('md')) {
+    renderMatrizMd(d);
+  } else if (t.startsWith('trade')) {
+    renderMatrizTrade(d);
+  }
+  // Log raw para debug si necesitamos ver el formato
+  // console.log('[Matriz]', t, d);
+}
+
+function renderMatrizBook(d) {
+  // Intentar múltiples formatos posibles
+  const bids = d.bids || d.buy  || d.compras || d.bidRows || [];
+  const asks = d.asks || d.sell || d.ventas  || d.askRows || [];
+  if (!bids.length && !asks.length) return;
+
+  const getPx  = o => o.px  ?? o.p  ?? o.price  ?? o.precio ?? 0;
+  const getQty = o => o.qty ?? o.q  ?? o.size   ?? o.cant   ?? o.cantidad ?? 0;
+
+  const topAsks = [...asks].slice(0, 5).reverse();
+  const topBids = [...bids].slice(0, 5);
+
+  let html = '';
+
+  // Ventas (rojo) — mostramos de mayor a menor
+  topAsks.forEach(a => {
+    const px = getPx(a), qty = getQty(a);
+    html += `<tr>
+      <td class="side-ask side-label">VENTA</td>
+      <td class="side-ask">$${fmt(px)}</td>
+      <td class="side-ask">${fmtK(qty)}</td>
+      <td></td>
+    </tr>`;
+  });
+
+  // Spread
+  if (topBids.length && topAsks.length) {
+    const bestBid = getPx(topBids[0]);
+    const bestAsk = getPx(topAsks[topAsks.length - 1]);
+    const sp = bestAsk - bestBid;
+    const spPct = bestBid > 0 ? ((sp / bestBid) * 100).toFixed(3) : '--';
+    html += `<tr class="spread-row"><td colspan="4">spread $${fmt(sp)} · ${spPct}%</td></tr>`;
+  }
+
+  // Compras (verde)
+  topBids.forEach(b => {
+    const px = getPx(b), qty = getQty(b);
+    html += `<tr>
+      <td class="side-bid side-label">COMPRA</td>
+      <td class="side-bid">$${fmt(px)}</td>
+      <td class="side-bid">${fmtK(qty)}</td>
+      <td></td>
+    </tr>`;
+  });
+
+  document.getElementById('ggal-spot-book').innerHTML = html;
+  const hint = document.getElementById('spot-hint');
+  if (hint) hint.style.display = 'none';
+}
+
+function renderMatrizMd(d) {
+  // Actualizar precio si viene del WebSocket (más fresco que Yahoo)
+  const last   = d.last   ?? d.lastPx  ?? d.close  ?? d.c;
+  const open   = d.open   ?? d.openPx  ?? d.o;
+  const vol    = d.volume ?? d.vol     ?? d.v;
+  const chg    = d.change ?? d.chg;
+  const chgPct = d.changePct ?? d.pct ?? d.chgPct;
+
+  if (last != null) {
+    _ggalSpot = last;
+    document.getElementById('ggal-spot-price').textContent = '$' + fmt(last);
+    document.getElementById('ggal-spot-change').innerHTML  = fmtChange(chg ?? 0, chgPct ?? 0);
+    if (vol  != null) document.getElementById('ggal-spot-vol').textContent  = fmtK(vol);
+    if (open != null) document.getElementById('ggal-spot-open').textContent = '$' + fmt(open);
+    updateRatio();
+    checkAlerts();
+  }
+}
+
+function renderMatrizTrade(d) {
+  // Actualizar último precio con el trade más reciente
+  const px = d.px ?? d.price ?? d.p;
+  if (px != null) {
+    _ggalSpot = px;
+    document.getElementById('ggal-spot-price').textContent = '$' + fmt(px);
+    updateRatio();
+    checkAlerts();
+  }
+}
+
+// ══════════════════════════════════════════════
+//  RATIO ADR / CCL IMPLÍCITO
+// ══════════════════════════════════════════════
+function updateRatio() {
+  if (!_cclVenta || !_ggalAdr || !_ggalSpot) return;
+  const teorico = _ggalAdr * _cclVenta / 10;
+  const diff    = ((_ggalSpot - teorico) / teorico) * 100;
+  const sign    = diff >= 0 ? '+' : '';
+  const cls     = diff > 0.5 ? 'prima' : diff < -0.5 ? 'descuento' : 'neutro';
+  const label   = diff > 0.5
+    ? 'PRIMA — spot caro vs ADR'
+    : diff < -0.5
+    ? 'DESCUENTO — spot barato vs ADR'
+    : 'PARIDAD';
+  document.getElementById('ratio-teorico').textContent = '$' + fmt(teorico);
+  document.getElementById('ratio-real').textContent    = '$' + fmt(_ggalSpot);
+  const diffEl = document.getElementById('ratio-diff');
+  diffEl.className   = 'ratio-value ' + cls;
+  diffEl.textContent = sign + diff.toFixed(2) + '%';
+  document.getElementById('ratio-desc').textContent = label;
+}
+
+// ══════════════════════════════════════════════
+//  SISTEMA DE ALERTAS
+// ══════════════════════════════════════════════
+const alertState = {
+  spot: JSON.parse(localStorage.getItem('alert_spot') || 'null'),
+  adr:  JSON.parse(localStorage.getItem('alert_adr')  || 'null'),
+};
+
+function renderAlertActive(key) {
+  const el = document.getElementById(`alert-${key}-active`);
+  const a  = alertState[key];
+  if (!a) { el.style.display = 'none'; return; }
+  el.style.display = 'flex';
+  const prefix = key === 'spot' ? '$' : 'USD ';
+  const arrow  = a.dir === 'above' ? '▲' : '▼';
+  const color  = a.triggered ? 'var(--red)' : (a.dir === 'above' ? 'var(--green)' : 'var(--red)');
+  el.className = 'alert-active' + (a.triggered ? ' alert-triggered' : '');
+  el.innerHTML = `
+    <span style="color:${color};font-weight:600">${arrow} ${prefix}${fmt(a.price)}</span>
+    <span style="color:var(--muted);font-size:10px">${a.triggered ? '✓ DISPARADA' : 'Activa'}</span>
+  `;
+}
+
+function toggleAlertDir(key) {
+  const btn = document.getElementById(`alert-${key}-dir`);
+  if (btn.textContent === '▲') {
+    btn.textContent = '▼';
+    btn.classList.remove('alert-dir-up');
+    btn.classList.add('alert-dir-down');
+  } else {
+    btn.textContent = '▲';
+    btn.classList.remove('alert-dir-down');
+    btn.classList.add('alert-dir-up');
+  }
+}
+
+function setAlert(key) {
+  const input = document.getElementById(`alert-${key}-input`);
+  const dir   = document.getElementById(`alert-${key}-dir`).textContent === '▲' ? 'above' : 'below';
+  const price = parseFloat(input.value);
+  if (!price || isNaN(price)) return;
+  alertState[key] = { price, dir, triggered: false };
+  localStorage.setItem(`alert_${key}`, JSON.stringify(alertState[key]));
+  input.value = '';
+  renderAlertActive(key);
+}
+
+function clearAlert(key) {
+  alertState[key] = null;
+  localStorage.removeItem(`alert_${key}`);
+  renderAlertActive(key);
+}
+
+function playBeep() {
+  try {
+    const ctx  = new (window.AudioContext || window.webkitAudioContext)();
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.setValueAtTime(660, ctx.currentTime + 0.15);
+    gain.gain.setValueAtTime(0.5, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.5);
+  } catch (e) { console.warn('Beep error:', e); }
+}
+
+function showToast(msg) {
+  const toast = document.getElementById('alert-toast');
+  toast.innerHTML = '<strong>🔔 ALERTA</strong><br>' + msg;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 6000);
+}
+
+function flashPrice(elId) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.classList.remove('price-flash');
+  void el.offsetWidth;
+  el.classList.add('price-flash');
+  el.addEventListener('animationend', () => el.classList.remove('price-flash'), { once: true });
+}
+
+function checkAlerts() {
+  const checks = [
+    { key: 'spot', price: _ggalSpot, label: 'GGAL BYMA', elId: 'ggal-spot-price', prefix: '$'    },
+    { key: 'adr',  price: _ggalAdr,  label: 'GGAL ADR',  elId: 'ggal-adr-price',  prefix: 'USD ' },
+  ];
+  for (const { key, price, label, elId, prefix } of checks) {
+    const a = alertState[key];
+    if (!a || a.triggered || price == null) continue;
+    const hit = (a.dir === 'above' && price >= a.price) ||
+                (a.dir === 'below' && price <= a.price);
+    if (hit) {
+      alertState[key].triggered = true;
+      localStorage.setItem(`alert_${key}`, JSON.stringify(alertState[key]));
+      playBeep();
+      flashPrice(elId);
+      const arrow = a.dir === 'above' ? '▲' : '▼';
+      showToast(`${label} ${arrow} ${prefix}${fmt(a.price)}<br>Precio actual: ${prefix}${fmt(price)}`);
+      renderAlertActive(key);
+    }
+  }
+}
+
+// ══════════════════════════════════════════════
+//  NOTICIAS — FinancialJuice Widget
+// ══════════════════════════════════════════════
+function loadFinancialJuice() {
+  var jo = document.createElement('script');
+  jo.type = 'text/javascript';
+  jo.id   = 'FJ-Widgets';
+  jo.src  = 'https://feed.financialjuice.com/widgets/widgets.js?r=' + Math.floor(Math.random() * 9999);
+  jo.onload = function () {
+    var options = {};
+    options.container  = 'fj-widget-inner';
+    options.mode       = '1';
+    options.width      = '100%';
+    options.height     = '320px';
+    options.backColor  = '161b22';
+    options.fontColor  = 'e6edf3';
+    options.widgetType = 'NEWS';
+    new window.FJWidgets.createWidget(options);
+  };
+  jo.onerror = function () {
+    document.getElementById('fj-widget-inner').innerHTML =
+      '<div class="loading">No se pudo cargar FinancialJuice. Verificar conexión o registrarse en financialjuice.com</div>';
+  };
+  document.head.appendChild(jo);
+}
+
+// ══════════════════════════════════════════════
+//  INIT & AUTO-REFRESH
+// ══════════════════════════════════════════════
+// Restaurar alertas guardadas
+renderAlertActive('spot');
+renderAlertActive('adr');
+
+// Restaurar URL de Matriz si estaba guardada
+const savedMatrizUrl = localStorage.getItem('matriz_wss');
+if (savedMatrizUrl) {
+  document.getElementById('matriz-url-input').value = savedMatrizUrl;
+}
+
+fetchDolar();
+fetchYahoo();
+loadFinancialJuice();
+
+setInterval(fetchDolar,  30_000);   // 30 seg
+setInterval(fetchYahoo,  30_000);   // 30 seg
+</script>
+</body>
+</html>
