@@ -473,6 +473,14 @@
         </div>
       </div>
       <div class="dolar-update" id="dolar-update"></div>
+      <div class="alert-row" style="margin-top:5px;padding-top:5px;">
+        <span class="alert-label">Alerta si variación &gt;</span>
+        <input type="number" id="dolar-alert-pct" class="alert-input"
+          style="max-width:52px;text-align:center;" placeholder="%" step="0.1" min="0.1" value="0.5"/>
+        <span style="font-size:10px;color:var(--muted)">%</span>
+        <button class="alert-btn alert-set" onclick="saveDolarAlertThreshold()">SET</button>
+        <span id="dolar-alert-status" style="font-size:10px;color:var(--muted);"></span>
+      </div>
     </div>
 
     <!-- Indices -->
@@ -730,6 +738,12 @@ let _cclVenta = null;
 let _ggalAdr  = null;
 let _ggalSpot = null;
 
+// MEP/CCL variation alert state
+let _prevMep         = null;
+let _prevCcl         = null;
+let _mepAlertCooldown = false;
+let _cclAlertCooldown = false;
+
 // ══════════════════════════════════════════════
 //  CLOCK
 // ══════════════════════════════════════════════
@@ -744,6 +758,30 @@ updateClock();
 // ══════════════════════════════════════════════
 //  DOLAR API
 // ══════════════════════════════════════════════
+function saveDolarAlertThreshold() {
+  const val = parseFloat(document.getElementById('dolar-alert-pct').value);
+  if (isNaN(val) || val <= 0) return;
+  localStorage.setItem('dolarAlertPct', val);
+  const st = document.getElementById('dolar-alert-status');
+  st.textContent = '✓ ' + val + '% guardado';
+  st.style.color = 'var(--green)';
+  setTimeout(() => { st.textContent = ''; }, 2500);
+}
+
+function _checkDolarVariation(name, newVal, prevVal, cooldownKey) {
+  if (prevVal === null || newVal === null) return;
+  const threshold = parseFloat(localStorage.getItem('dolarAlertPct') || '0.5');
+  const pct = Math.abs((newVal - prevVal) / prevVal * 100);
+  if (pct >= threshold && !window[cooldownKey]) {
+    const dir   = newVal > prevVal ? '▲' : '▼';
+    const color = newVal > prevVal ? 'var(--red)' : 'var(--green)';
+    showToast(`${name} ${dir} ${pct.toFixed(2)}% → $${fmt(newVal)}`, color);
+    playBeep(newVal > prevVal ? 880 : 660, 0.4, 0.3);
+    window[cooldownKey] = true;
+    setTimeout(() => { window[cooldownKey] = false; }, 5 * 60 * 1000);
+  }
+}
+
 async function fetchDolar() {
   try {
     const res  = await fetch('https://dolarapi.com/v1/dolares');
@@ -752,10 +790,16 @@ async function fetchDolar() {
     const ccl  = data.find(d => d.casa === 'contadoconliqui');
 
     if (mep) {
+      const newMep = mep.venta;
+      _checkDolarVariation('MEP', newMep, _prevMep, '_mepAlertCooldown');
+      _prevMep = newMep;
       document.getElementById('mep-buy').textContent  = '$' + fmt(mep.compra);
       document.getElementById('mep-sell').textContent = 'Venta: $' + fmt(mep.venta);
     }
     if (ccl) {
+      const newCcl = ccl.venta;
+      _checkDolarVariation('CCL', newCcl, _prevCcl, '_cclAlertCooldown');
+      _prevCcl = newCcl;
       document.getElementById('ccl-buy').textContent  = '$' + fmt(ccl.compra);
       document.getElementById('ccl-sell').textContent = 'Venta: $' + fmt(ccl.venta);
     }
@@ -1267,6 +1311,12 @@ renderAlertActive('adr');
 const savedMatrizUrl = localStorage.getItem('matriz_wss');
 if (savedMatrizUrl) {
   document.getElementById('matriz-url-input').value = savedMatrizUrl;
+}
+
+// Restaurar umbral de alerta MEP/CCL
+const savedDolarPct = localStorage.getItem('dolarAlertPct');
+if (savedDolarPct) {
+  document.getElementById('dolar-alert-pct').value = savedDolarPct;
 }
 
 fetchDolar();
