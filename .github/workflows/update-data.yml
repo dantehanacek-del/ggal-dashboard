@@ -30,45 +30,38 @@ jobs:
           SYMBOLS = ['GGAL', 'GGAL.BA', '^GSPC', '^IXIC', '^DJI', '^MERV',
                      'BMA.BA', 'BBAR.BA', 'SUPV.BA']
 
-          tickers = yf.Tickers(' '.join(SYMBOLS))
           results = []
-
           for sym in SYMBOLS:
               try:
-                  info = tickers.tickers[sym].fast_info
-                  hist = tickers.tickers[sym].history(period='1d', interval='1m')
-                  last_price = float(info.last_price) if info.last_price else None
-                  open_price = float(info.open)       if info.open       else last_price
-                  prev_close = float(info.previous_close) if info.previous_close else open_price
-                  volume     = int(info.shares)        if hasattr(info,'shares') and info.shares else 0
-
-                  if last_price is None or last_price <= 0:
-                      print(f'  {sym}: sin precio', file=sys.stderr)
+                  hist = yf.Ticker(sym).history(period='2d')
+                  if hist.empty:
+                      print(f'  {sym}: vacío', file=sys.stderr)
                       continue
-
-                  change     = last_price - prev_close
-                  change_pct = (change / prev_close * 100) if prev_close else 0
-
+                  last  = hist.iloc[-1]
+                  prev  = hist.iloc[-2] if len(hist) > 1 else last
+                  price = float(last['Close'])
+                  open_ = float(last['Open'])
+                  vol   = int(last['Volume'])
+                  chg   = price - float(prev['Close'])
+                  pct   = chg / float(prev['Close']) * 100 if prev['Close'] else 0
                   results.append({
                       'symbol':                     sym,
-                      'regularMarketPrice':         last_price,
-                      'regularMarketChange':        change,
-                      'regularMarketChangePercent': change_pct,
-                      'regularMarketVolume':        volume,
-                      'regularMarketOpen':          open_price,
+                      'regularMarketPrice':         price,
+                      'regularMarketChange':        round(chg, 4),
+                      'regularMarketChangePercent': round(pct, 4),
+                      'regularMarketVolume':        vol,
+                      'regularMarketOpen':          open_,
                   })
-                  print(f'  {sym}: {last_price}')
+                  print(f'  {sym}: {price}')
               except Exception as e:
-                  print(f'  {sym}: ERROR {e}', file=sys.stderr)
+                  print(f'  {sym}: {e}', file=sys.stderr)
 
           if not results:
-              print('Sin resultados — abortando', file=sys.stderr)
+              print('Sin resultados', file=sys.stderr)
               sys.exit(1)
 
-          output = {'quoteResponse': {'result': results, 'error': None}}
           with open('data.json', 'w') as f:
-              json.dump(output, f)
-
+              json.dump({'quoteResponse': {'result': results, 'error': None}}, f)
           print(f'OK: {len(results)}/{len(SYMBOLS)} símbolos')
           EOF
 
