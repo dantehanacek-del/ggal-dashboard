@@ -818,11 +818,13 @@ async function fetchDolar() {
 }
 
 // ══════════════════════════════════════════════
-//  MARKET DATA (Yahoo Finance → Stooq fallback)
+//  MARKET DATA — backend propio (sin proxies de terceros)
 // ══════════════════════════════════════════════
 
-// fetch con timeout — evita proxies colgados
-async function fetchT(url, ms = 6000) {
+// URL del backend — actualizar después del deploy en Railway/Render
+const BACKEND_URL = (localStorage.getItem('ggal_backend_url') || '').replace(/\/$/, '');
+
+async function fetchT(url, ms = 8000) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
   try {
@@ -831,10 +833,6 @@ async function fetchT(url, ms = 6000) {
     clearTimeout(t);
   }
 }
-
-// ── Fuente 1: data.json generado por GitHub Actions (Yahoo Finance server-side) ──
-const YF_SYMS = 'GGAL,GGAL.BA,%5EGSPC,%5EIXIC,%5EDJI,%5EMERV,BMA.BA,BBAR.BA,SUPV.BA';
-const YF_URL  = 'https://query1.finance.yahoo.com/v8/finance/quote?symbols=' + YF_SYMS;
 
 function parseYFResult(qs) {
   if (!qs?.length) throw new Error('vacío');
@@ -851,70 +849,13 @@ function parseYFResult(qs) {
   return map;
 }
 
-async function fetchFromDataJson() {
-  // data.json es generado por GitHub Actions cada 5 min — mismo dominio, sin CORS
-  const r = await fetchT('./data.json?v=' + Date.now(), 5000);
+async function fetchMarket() {
+  if (!BACKEND_URL) throw new Error('Backend no configurado');
+  const r = await fetchT(BACKEND_URL + '/api/market', 10000);
   if (!r.ok) throw new Error('HTTP ' + r.status);
   const json = await r.json();
-  if (json?.quoteResponse?.error) throw new Error(json.quoteResponse.error);
-  return parseYFResult(json?.quoteResponse?.result);
-}
-
-async function fetchYahooQuotes() {
-  // Fallback: corsproxy.io → Yahoo Finance directo
-  const r = await fetchT('https://corsproxy.io/?' + encodeURIComponent(YF_URL), 8000);
-  if (!r.ok) throw new Error('HTTP ' + r.status);
-  const json = await r.json();
-  return parseYFResult(json?.quoteResponse?.result);
-}
-
-// ── Fuente 3: Stooq (fallback con campo Change vs cierre anterior) ──
-const STOOQ_SYMS = {
-  'GGAL':    'ggal.us',
-  'GGAL.BA': 'ggal.ba',
-  '^GSPC':   '^spx',
-  '^IXIC':   '^ndq',
-  '^DJI':    '^dji',
-  '^MERV':   '^merv',
-  'BMA.BA':  'bma.ba',
-  'BBAR.BA': 'bbar.ba',
-  'SUPV.BA': 'supv.ba',
-};
-const STOOQ_BASE = 'https://stooq.com/q/l/?f=sd2t2ohlcvde&h&e=csv&s=';
-
-function parseStooqCsv(text) {
-  if (!text || text.length < 10) return null;
-  const lines = text.trim().replace(/\r/g, '').split('\n');
-  if (lines.length < 2) return null;
-  const headers = lines[0].split(',').map(h => h.trim());
-  const vals    = lines[1].split(',').map(v => v.trim());
-  const row = {};
-  headers.forEach((h, i) => row[h] = vals[i]);
-  const close = parseFloat(row['Close']);
-  const open  = parseFloat(row['Open']);
-  const chgF  = parseFloat(row['Change']);
-  const pctF  = parseFloat(row['Change%']);
-  if (isNaN(close) || close <= 0) return null;
-  const change = !isNaN(chgF) ? chgF : (isNaN(open) ? 0 : close - open);
-  const pct    = !isNaN(pctF) ? pctF : ((!open || isNaN(open)) ? 0 : (change / open) * 100);
-  return { price: close, change, pct, volume: parseInt(row['Volume'] || '0'), open };
-}
-
-async function fetchStooqSymbol(stooqSym) {
-  const rawUrl = STOOQ_BASE + stooqSym;
-  const enc    = encodeURIComponent(rawUrl);
-  const proxies = [
-    () => fetchT('https://corsproxy.io/?' + enc).then(r => { if (!r.ok) throw new Error(r.status); return r.text(); }),
-    () => fetchT('https://api.allorigins.win/get?url=' + enc).then(r => { if (!r.ok) throw new Error(r.status); return r.json().then(j => j.contents || ''); }),
-    () => fetchT(rawUrl).then(r => { if (!r.ok) throw new Error(r.status); return r.text(); }),
-  ];
-  for (const p of proxies) {
-    try {
-      const parsed = parseStooqCsv(await p());
-      if (parsed) return parsed;
-    } catch (e) { console.warn('[Stooq]', stooqSym, e.message || e); }
-  }
-  return null;
+  const map = parseYFResult(json?.quoteResponse?.result);
+  return { map, cached: json._cached || false, age: json._age || 0 };
 }
 
 function renderQuotes(map) {
@@ -968,39 +909,25 @@ function renderQuotes(map) {
 }
 
 async function fetchYahoo() {
-  // 1. data.json del repo (GitHub Actions → Yahoo Finance server-side, sin CORS)
+  const updEl = document.getElementById('last-update');
   try {
-    const map = await fetchFromDataJson();
-    console.log('[data.json] ✓');
+    const { map, cached, age } = await fetchMarket();
     renderQuotes(map);
-    return;
+    if (cached) {
+      const ageS = Math.round(age / 1000);
+      updEl.textContent = `Cache (${ageS}s) · ${new Date().toLocaleTimeString('es-AR', { hour12: false })}`;
+      updEl.style.color = 'var(--yellow)';
+    } else {
+      updEl.style.color = '';
+    }
   } catch (e) {
-    console.warn('[data.json] ✗:', e.message);
-  }
-  // 2. Yahoo Finance via corsproxy.io (fallback directo)
-  try {
-    const map = await fetchYahooQuotes();
-    console.log('[Yahoo Finance proxy] ✓');
-    renderQuotes(map);
-    return;
-  } catch (e) {
-    console.warn('[Yahoo Finance proxy] ✗:', e.message, '— usando Stooq');
-  }
-  // 3. Fallback Stooq
-  const entries = await Promise.allSettled(
-    Object.entries(STOOQ_SYMS).map(([ySym, sSym]) =>
-      fetchStooqSymbol(sSym).then(d => [ySym, d])
-    )
-  );
-  const map = {};
-  for (const r of entries) {
-    if (r.status === 'fulfilled' && r.value?.[1]) map[r.value[0]] = r.value[1];
-  }
-  if (Object.keys(map).length) {
-    console.log('[Stooq] ✓', Object.keys(map).length, 'símbolos');
-    renderQuotes(map);
-  } else {
-    console.warn('Sin datos de mercado');
+    console.warn('[market]', e.message);
+    updEl.textContent = 'Sin datos — reintentando...';
+    updEl.style.color = 'var(--red)';
+    if (!BACKEND_URL) {
+      updEl.textContent = 'Backend no configurado — ver consola';
+      console.error('Configurar backend: localStorage.setItem("ggal_backend_url", "https://tu-app.railway.app")');
+    }
   }
 }
 
@@ -1043,8 +970,10 @@ function renderBook(tbodyId, bid, ask, bidSize, askSize, prefix, hintId) {
 const MATRIZ_BASE = 'https://matriz.eco.xoms.com.ar';
 const MATRIZ_WSS  = 'wss://matriz.eco.xoms.com.ar/ws';
 
-let matrizWs        = null;
-let matrizReconnect = null;
+let matrizWs             = null;
+let matrizReconnect      = null;
+let matrizReconnectDelay = 3000;
+const MATRIZ_MAX_DELAY   = 60000;
 
 function toggleMatrizPanel() {
   document.getElementById('matriz-panel').classList.toggle('open');
@@ -1100,7 +1029,9 @@ function connectMatrizFromInput() {
 
 function disconnectMatriz() {
   clearTimeout(matrizReconnect);
-  if (matrizWs) { matrizWs.onclose = null; matrizWs.close(); matrizWs = null; }
+  matrizReconnectDelay = 3000;
+  if (matrizWs) { matrizWs.onclose = null; matrizWs.close(1000, 'usuario'); matrizWs = null; }
+  localStorage.removeItem('matriz_wss');
   setMatrizStatus('', 'Desconectado');
 }
 
@@ -1117,6 +1048,8 @@ function connectMatriz(url) {
 
   matrizWs.onopen = () => {
     console.log('[MATRIZ] WS abierto:', url);
+    matrizReconnectDelay = 3000; // reset backoff
+    localStorage.setItem('matriz_wss', url);
     setMatrizStatus('connected', 'Conectado — esperando datos...');
     document.getElementById('matriz-panel').classList.remove('open');
 
@@ -1140,13 +1073,18 @@ function connectMatriz(url) {
   matrizWs.onclose = (ev) => {
     console.log('[MATRIZ] WS cerrado — código:', ev.code, 'razón:', ev.reason);
     matrizWs = null;
-    // Si hay URL guardada, reconectar directamente con ella (evita CORS del profile fetch)
     const savedUrl = localStorage.getItem('matriz_wss');
-    if (savedUrl && savedUrl.startsWith('wss://')) {
-      setMatrizStatus('error', 'Reconectando...');
-      matrizReconnect = setTimeout(() => connectMatriz(savedUrl), 3000);
+    // Código 1000 = cierre limpio (usuario desconectó), no reconectar
+    if (ev.code !== 1000 && savedUrl && savedUrl.startsWith('wss://')) {
+      const secs = Math.round(matrizReconnectDelay / 1000);
+      setMatrizStatus('error', `Reconectando en ${secs}s...`);
+      matrizReconnect = setTimeout(() => {
+        connectMatriz(savedUrl);
+        matrizReconnectDelay = Math.min(matrizReconnectDelay * 2, MATRIZ_MAX_DELAY);
+      }, matrizReconnectDelay);
     } else {
-      setMatrizStatus('error', 'Desconectado — reconectá manualmente');
+      matrizReconnectDelay = 3000;
+      setMatrizStatus('error', 'Desconectado');
     }
   };
 
