@@ -2,8 +2,8 @@ name: Actualizar datos de mercado
 
 on:
   schedule:
-    - cron: '*/5 * * * *'   # cada 5 minutos
-  workflow_dispatch:          # permite correr manualmente
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
 
 jobs:
   update:
@@ -14,32 +14,68 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch Yahoo Finance
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar yfinance
+        run: pip install yfinance --quiet
+
+      - name: Fetch y guardar data.json
         run: |
-          SYMS="GGAL,GGAL.BA,%5EGSPC,%5EIXIC,%5EDJI,%5EMERV,BMA.BA,BBAR.BA,SUPV.BA"
-          URL="https://query1.finance.yahoo.com/v8/finance/quote?symbols=${SYMS}"
-          curl -s -o data.json \
-            -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
-            -H "Accept: application/json" \
-            "$URL"
-          # Verificar que el archivo tiene datos válidos
-          python3 -c "
+          python3 << 'EOF'
+          import yfinance as yf
           import json, sys
-          with open('data.json') as f:
-            d = json.load(f)
-          results = d.get('quoteResponse', {}).get('result', [])
+
+          SYMBOLS = ['GGAL', 'GGAL.BA', '^GSPC', '^IXIC', '^DJI', '^MERV',
+                     'BMA.BA', 'BBAR.BA', 'SUPV.BA']
+
+          tickers = yf.Tickers(' '.join(SYMBOLS))
+          results = []
+
+          for sym in SYMBOLS:
+              try:
+                  info = tickers.tickers[sym].fast_info
+                  hist = tickers.tickers[sym].history(period='1d', interval='1m')
+                  last_price = float(info.last_price) if info.last_price else None
+                  open_price = float(info.open)       if info.open       else last_price
+                  prev_close = float(info.previous_close) if info.previous_close else open_price
+                  volume     = int(info.shares)        if hasattr(info,'shares') and info.shares else 0
+
+                  if last_price is None or last_price <= 0:
+                      print(f'  {sym}: sin precio', file=sys.stderr)
+                      continue
+
+                  change     = last_price - prev_close
+                  change_pct = (change / prev_close * 100) if prev_close else 0
+
+                  results.append({
+                      'symbol':                     sym,
+                      'regularMarketPrice':         last_price,
+                      'regularMarketChange':        change,
+                      'regularMarketChangePercent': change_pct,
+                      'regularMarketVolume':        volume,
+                      'regularMarketOpen':          open_price,
+                  })
+                  print(f'  {sym}: {last_price}')
+              except Exception as e:
+                  print(f'  {sym}: ERROR {e}', file=sys.stderr)
+
           if not results:
-            print('Sin datos — abortando', file=sys.stderr)
-            sys.exit(1)
-          print(f'OK: {len(results)} símbolos obtenidos')
-          for r in results:
-            print(f\"  {r['symbol']}: {r.get('regularMarketPrice')}\")
-          "
+              print('Sin resultados — abortando', file=sys.stderr)
+              sys.exit(1)
+
+          output = {'quoteResponse': {'result': results, 'error': None}}
+          with open('data.json', 'w') as f:
+              json.dump(output, f)
+
+          print(f'OK: {len(results)}/{len(SYMBOLS)} símbolos')
+          EOF
 
       - name: Commit data.json
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data.json
-          git diff --staged --quiet || git commit -m "data: actualización automática $(date -u '+%H:%M UTC')"
+          git diff --staged --quiet || git commit -m "data: $(date -u '+%H:%M UTC')"
           git push
